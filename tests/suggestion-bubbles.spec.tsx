@@ -56,6 +56,8 @@ describe('SuggestionBubbles', () => {
     const first = render(<SuggestionBubbles {...props({ turn: 1, generating: false, suggestions: ['a'] }).value} />)
     const second = render(<SuggestionBubbles {...props({ turn: 2, generating: false, suggestions: ['b'] }).value} />)
     expect(document.querySelectorAll('#dsh-suggested-replies-style')).toHaveLength(1)
+    expect(document.getElementById('dsh-suggested-replies-style')?.textContent).toContain('flex-wrap: nowrap')
+    expect(document.getElementById('dsh-suggested-replies-style')?.textContent).toContain('overflow-x: auto')
     first.unmount()
     expect(document.querySelectorAll('#dsh-suggested-replies-style')).toHaveLength(1)
     second.unmount()

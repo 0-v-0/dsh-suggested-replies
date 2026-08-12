@@ -26,11 +26,17 @@ const CSS_TEXT = `
 }
 .dsh-suggested-replies-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   min-height: 36px;
   padding: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.dsh-suggested-replies-row::-webkit-scrollbar {
+  display: none;
 }
 .dsh-suggested-replies-loading {
   color: var(--dsw-alias-label-tertiary, #68707d);
@@ -45,6 +51,7 @@ const CSS_TEXT = `
 }
 .dsh-suggested-replies-bubble {
   box-sizing: border-box;
+  flex: none;
   max-width: min(100%, 320px);
   overflow: hidden;
   padding: 6px 10px;
