@@ -26,6 +26,8 @@ export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
   readonly contextMessageCount: number
   /** Maximum output tokens requested from the model. */
   readonly maxTokens: number
+  /** Optional explicit auxiliary route that overrides the conversation route. */
+  readonly suggestionRoute?: SuggestedRepliesRoute
 }
 
 /** Complete, loggable auxiliary request prepared before provider dispatch. */
@@ -63,6 +65,25 @@ export function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | nu
 }
 
 /**
+ * Validate and normalize an optional explicit auxiliary route.
+ * @param provider - optional configured provider, or `undefined` to inherit.
+ * @param model - optional configured model, or `undefined` to inherit.
+ * @returns the explicit route, or `undefined` when both fields are omitted.
+ */
+export function resolveConfiguredSuggestionRoute(
+  provider: string | undefined,
+  model: string | undefined,
+): SuggestedRepliesRoute | undefined {
+  if (provider === undefined && model === undefined) return undefined
+  if (provider === undefined || model === undefined || provider.trim().length === 0 || model.trim().length === 0) {
+    throw new Error(
+      'dsh-suggested-replies: suggestionProvider and suggestionModel must be set together as a non-empty pair',
+    )
+  }
+  return { provider, model }
+}
+
+/**
  * Prepare the detached request when the current route and conversation support it.
  * @param ctx - host context that may own an LLM service.
  * @param agent - agent whose completed turn supplied the context.
@@ -80,7 +101,7 @@ export function prepareSuggestionRequest(
 ): PreparedSuggestionRequest | null {
   if (ctx.get('llm') === undefined || signal.aborted) return null
   if (!turnHasAssistantText(agent, turn)) return null
-  const route = resolveSuggestionRoute(agent)
+  const route = config.suggestionRoute ?? resolveSuggestionRoute(agent)
   if (route === null) return null
   const prompt = buildSuggestedRepliesUserPrompt(deriveRecentMessages(agent, config.contextMessageCount))
   if (prompt === null) return null

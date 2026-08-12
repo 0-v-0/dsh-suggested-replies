@@ -12,3 +12,7 @@
         maxSuggestionChars: 160
         maxTokens: 384
         timeoutMs: 15000
+        # Optional explicit auxiliary route. Omit to inherit the current
+        # session provider/model.
+        # suggestionProvider: deepseek-official
+        # suggestionModel: deepseek-v4-flash

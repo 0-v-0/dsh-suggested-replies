@@ -14,6 +14,8 @@ export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
     readonly contextMessageCount: number;
     /** Maximum output tokens requested from the model. */
     readonly maxTokens: number;
+    /** Optional explicit auxiliary route that overrides the conversation route. */
+    readonly suggestionRoute?: SuggestedRepliesRoute;
 }
 /** Complete, loggable auxiliary request prepared before provider dispatch. */
 export interface PreparedSuggestionRequest {
@@ -35,6 +37,13 @@ export declare function deriveRecentMessages(agent: Agent, contextMessageCount: 
  * @returns provider/model pair, or `null` when neither source has both fields.
  */
 export declare function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | null;
+/**
+ * Validate and normalize an optional explicit auxiliary route.
+ * @param provider - optional configured provider, or `undefined` to inherit.
+ * @param model - optional configured model, or `undefined` to inherit.
+ * @returns the explicit route, or `undefined` when both fields are omitted.
+ */
+export declare function resolveConfiguredSuggestionRoute(provider: string | undefined, model: string | undefined): SuggestedRepliesRoute | undefined;
 /**
  * Prepare the detached request when the current route and conversation support it.
  * @param ctx - host context that may own an LLM service.

@@ -21,6 +21,7 @@ import { GenerationGate, type GenerationLease } from './generation-gate.ts'
 import {
   generateSuggestedReplies,
   prepareSuggestionRequest,
+  resolveConfiguredSuggestionRoute,
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
@@ -50,6 +51,10 @@ export interface Config extends SuggestedRepliesSettings {
   maxTokens: number
   /** Maximum lifetime of one auxiliary model call. */
   timeoutMs: number
+  /** Optional explicit provider for auxiliary calls; omitted means inherit the conversation route. */
+  suggestionProvider?: string
+  /** Optional explicit model for auxiliary calls; must be paired with `suggestionProvider`. */
+  suggestionModel?: string
 }
 
 /** Config schema with deployment-adjustable generation limits. */
@@ -60,6 +65,8 @@ export const Config = z.object({
   maxSuggestionChars: z.number().step(1).min(32).max(300).default(160).description('Maximum characters retained for each candidate.'),
   maxTokens: z.number().step(1).min(64).max(1024).default(384).description('Maximum output tokens for the auxiliary model call.'),
   timeoutMs: z.number().step(1).min(1_000).max(30_000).default(15_000).description('Maximum milliseconds an auxiliary model call may run.'),
+  suggestionProvider: z.string().required(false).description('Optional explicit provider for auxiliary calls; omitted means inherit the conversation route.'),
+  suggestionModel: z.string().required(false).description('Optional explicit model for auxiliary calls; must be paired with suggestionProvider.'),
 }) as unknown as z<Config>
 
 /**
@@ -97,11 +104,13 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
 
+  const suggestionRoute = resolveConfiguredSuggestionRoute(config.suggestionProvider, config.suggestionModel)
   const generationConfig: SuggestionGenerationConfig = {
     suggestionCount: config.suggestionCount,
     contextMessageCount: config.contextMessageCount,
     maxSuggestionChars: config.maxSuggestionChars,
     maxTokens: config.maxTokens,
+    ...suggestionRoute === undefined ? {} : { suggestionRoute },
   }
 
   ctx.on('session/event', (session, event) => {

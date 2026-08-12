@@ -7,6 +7,7 @@ import {
   drainTextStream,
   generateSuggestedReplies,
   prepareSuggestionRequest,
+  resolveConfiguredSuggestionRoute,
   resolveSuggestionRoute,
   type PreparedSuggestionRequest,
 } from '../src/suggestion-llm.ts'
@@ -65,6 +66,26 @@ describe('resolveSuggestionRoute', () => {
   })
 })
 
+describe('resolveConfiguredSuggestionRoute', () => {
+  it('keeps the conversation route when both override fields are omitted', () => {
+    expect(resolveConfiguredSuggestionRoute(undefined, undefined)).toBeUndefined()
+  })
+
+  it('returns a complete non-empty explicit route', () => {
+    expect(resolveConfiguredSuggestionRoute('deepseek-official', 'deepseek-v4-flash')).toEqual({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })
+  })
+
+  it('rejects a missing or empty half of the optional route', () => {
+    expect(() => resolveConfiguredSuggestionRoute('deepseek-official', undefined)).toThrow(/must be set together/)
+    expect(() => resolveConfiguredSuggestionRoute(undefined, 'deepseek-v4-flash')).toThrow(/must be set together/)
+    expect(() => resolveConfiguredSuggestionRoute('', 'deepseek-v4-flash')).toThrow(/must be set together/)
+    expect(() => resolveConfiguredSuggestionRoute('deepseek-official', '')).toThrow(/must be set together/)
+  })
+})
+
 describe('prepareSuggestionRequest', () => {
   it('returns a request whose logged inputs match the dispatched inputs', () => {
     const controller = new AbortController()
@@ -92,6 +113,31 @@ describe('prepareSuggestionRequest', () => {
     expect(request?.options.reasoningEffort).toBeUndefined()
     expect(request?.options.messages).toHaveLength(1)
     expect(request?.options.messages[0]?.content).toEqual([{ type: 'text', text: request?.log.prompt }])
+  })
+
+  it('prefers an explicitly configured auxiliary route over the conversation route', () => {
+    const controller = new AbortController()
+    const subject = agent({
+      logged: { provider: 'logged', model: 'actual' },
+      fallback: { provider: 'default', model: 'fallback' },
+      messages: [textMessage('user', '请实现'), textMessage('assistant', '已经实现完成')],
+    })
+    const request = prepareSuggestionRequest(
+      { get: () => ({}) } as never,
+      subject,
+      {
+        suggestionCount: 3,
+        contextMessageCount: 4,
+        maxSuggestionChars: 120,
+        maxTokens: 384,
+        suggestionRoute: { provider: 'cheap-provider', model: 'cheap-model' },
+      },
+      1,
+      controller.signal,
+    )
+    expect(request).not.toBeNull()
+    expect(request?.log.route).toEqual({ provider: 'cheap-provider', model: 'cheap-model' })
+    expect(request?.options).toMatchObject({ provider: 'cheap-provider', model: 'cheap-model' })
   })
 
   it('returns null without an LLM service, a route, or a final assistant text', () => {

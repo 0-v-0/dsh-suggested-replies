@@ -19,7 +19,7 @@ AI 完成本轮回复
 - **只填入草稿**：点击候选会替换当前草稿为该候选，不会调用发送动作。
 - **候选内容**：优先覆盖合理的下一步执行、验证/追问、或决策/选择；候选跟随最近对话语言，彼此去重且可直接发送。
 - **过期保护**：新用户输入、设置关闭、辅助调用超时或插件卸载都会取消当前生成，避免旧结果在下一轮对话中回流。
-- **模型调用与成本**：每个可生成候选的完成轮次额外发起一次短文本 LLM 调用，优先复用 Session 最新 `request/header` 中实际使用的 provider/model，再回退到 Agent 默认路由。关闭开关后不再发起该调用。
+- **模型调用与成本**：每个可生成候选的完成轮次额外发起一次短文本 LLM 调用。默认复用 Session 最新 `request/header` 中实际使用的 provider/model，再回退到 Agent 默认路由；也可通过 `suggestionProvider` + `suggestionModel` 显式覆盖。关闭开关后不再发起该调用。
 
 ## 安装
 
@@ -51,6 +51,8 @@ Web 设置页中的“下一步建议”分区提供 `enabled` 总开关。它�
 | `maxSuggestionChars` | `160` | 单条候选保留的最大字符数，范围 `32-300`。 |
 | `maxTokens` | `384` | 辅助调用的最大输出 token，范围 `64-1024`。 |
 | `timeoutMs` | `15000` | 辅助调用最长时长（毫秒），范围 `1000-30000`。 |
+| `suggestionProvider` | 未设置 | 可选：显式指定辅助调用 provider；省略时跟随当前会话模型。 |
+| `suggestionModel` | 未设置 | 可选：显式指定辅助调用 model；必须与 `suggestionProvider` 同时提供。 |
 
 示例 overlay：
 
@@ -61,6 +63,8 @@ Web 设置页中的“下一步建议”分区提供 `enabled` 总开关。它�
         suggestionCount: 4
         maxSuggestionChars: 120
         timeoutMs: 10000
+        suggestionProvider: deepseek-official
+        suggestionModel: deepseek-v4-flash
 ```
 
 ## 开发与验证

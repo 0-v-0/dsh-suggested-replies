@@ -30,6 +30,10 @@ export interface Config extends SuggestedRepliesSettings {
     maxTokens: number;
     /** Maximum lifetime of one auxiliary model call. */
     timeoutMs: number;
+    /** Optional explicit provider for auxiliary calls; omitted means inherit the conversation route. */
+    suggestionProvider?: string;
+    /** Optional explicit model for auxiliary calls; must be paired with `suggestionProvider`. */
+    suggestionModel?: string;
 }
 /** Config schema with deployment-adjustable generation limits. */
 export declare const Config: z<Config>;

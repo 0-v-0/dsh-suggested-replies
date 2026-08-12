@@ -9,6 +9,7 @@
 - Candidate results are non-surface session events. They must not enter model-visible history.
 - New user input, a disabled setting, a timeout, or plugin disposal must invalidate the active generation so a stale result cannot reappear.
 - Keep all deployment-varying limits in `Config`; do not introduce hidden hardcoded tunables.
+- Default the auxiliary model to the current conversation route; `suggestionProvider` and `suggestionModel` are an optional paired override.
 
 ## Development
 
