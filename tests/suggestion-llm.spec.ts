@@ -1,10 +1,10 @@
-/** Tests for auxiliary route selection, request assembly, and stream handling. */
+/** Tests for route selection, internal Agent composition, and result parsing. */
 import { describe, expect, it, vi } from 'vitest'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { Agent, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Message } from '@deepseek-ai/dsh-llm'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  buildSuggestionCallOptions,
-  drainTextStream,
+  extractSuggestionText,
   generateSuggestedReplies,
   prepareSuggestionRequest,
   resolveConfiguredSuggestionRoute,
@@ -12,16 +12,23 @@ import {
   type PreparedSuggestionRequest,
 } from '../src/suggestion-llm.ts'
 
-/** Build a minimal Agent face for the pure helpers. */
-function agent(options: {
+/** Build a minimal parent Agent face for pure request preparation. */
+function parentAgent(options: {
   readonly logged?: { provider: string; model: string }
   readonly fallback?: { provider?: string; model?: string }
   readonly messages?: Message[]
+  readonly cwd?: string
 } = {}): Agent {
   return {
-    id: 'session-1' as Agent['id'],
+    id: 'session-parent' as Agent['id'],
     options: options.fallback ?? {},
     session: {
+      header: {
+        version: 0,
+        id: 'session-parent',
+        createdAt: 1,
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      },
       requestHeader: () => options.logged === undefined ? undefined : { config: options.logged },
       deriveMessages: () => options.messages ?? [],
       events: (options.messages ?? []).flatMap((candidate, index) => candidate.role === 'assistant'
@@ -29,6 +36,7 @@ function agent(options: {
             type: 'assistant/message',
             seq: index,
             time: 0,
+            surfaceOp: 'append',
             data: { turn: 1, step: 1, message: candidate },
           }]
         : []),
@@ -36,7 +44,7 @@ function agent(options: {
   } as unknown as Agent
 }
 
-/** Create a text-only conversation message. */
+/** Create one text-only conversation message. */
 function textMessage(role: 'user' | 'assistant', text: string): Message {
   return {
     id: crypto.randomUUID() as Message['id'],
@@ -48,171 +56,243 @@ function textMessage(role: 'user' | 'assistant', text: string): Message {
   }
 }
 
-async function* chunks(values: readonly StreamChunk[]): AsyncIterable<StreamChunk> {
-  yield* values
+/** Create one injected context message that must not consume conversation slots. */
+function contextMessage(text: string): Message {
+  return {
+    id: crypto.randomUUID() as Message['id'],
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: 'test-context', form: 'snapshot', sections: [] },
+  }
+}
+
+function request(): PreparedSuggestionRequest {
+  return {
+    route: { provider: 'deepseek', model: 'chat' },
+    system: 'Return JSON only.',
+    prompt: 'Recent conversation',
+    maxTokens: 128,
+  }
+}
+
+/** Construct the official-event-only internal Agent used by generation tests. */
+function generationHarness(output: string, options: { flush?: boolean; archiveFailure?: Error } = {}) {
+  const events: SessionEvent[] = []
+  const followup = vi.fn((message: Message) => {
+    events.push(
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } } as SessionEvent,
+      { type: 'user/message', seq: 1, time: 2, surfaceOp: 'append', data: message } as SessionEvent,
+      {
+        type: 'assistant/message',
+        seq: 2,
+        time: 3,
+        surfaceOp: 'append',
+        data: { turn: 1, step: 1, message: textMessage('assistant', output) },
+      } as SessionEvent,
+      { type: 'turn/end', seq: 3, time: 4, data: { turn: 1, reason: { kind: 'completed' } } } as SessionEvent,
+    )
+  })
+  const internalAgent = {
+    id: 'session-internal',
+    options: { provider: 'deepseek', model: 'chat' },
+    session: {
+      id: 'session-internal',
+      header: { version: 0, id: 'session-internal', createdAt: 2, cwd: '/work' },
+      get seq() { return events.length },
+      events,
+    },
+    whenIdle: vi.fn(async () => undefined),
+    followup,
+    cancel: vi.fn(),
+  } as unknown as Agent
+  const dispose = vi.fn(async () => undefined)
+  const create = vi.fn(async (createOptions: CreateAgentOptions) => {
+    const presentAs = vi.fn()
+    const restrict = vi.fn()
+    const section = vi.fn()
+    await createOptions.setup?.({
+      tools: { presentAs, restrict },
+      systemPrompt: { section },
+    } as never)
+    return { agent: internalAgent, dispose, composition: { presentAs, restrict, section } }
+  })
+  const archiveSession = options.archiveFailure === undefined
+    ? vi.fn(async () => undefined)
+    : vi.fn(async () => { throw options.archiveFailure })
+  const ctx = {
+    agents: {
+      withoutInitiator: <T>(operation: () => T): T => operation(),
+      create,
+    },
+    sessions: { flush: vi.fn(async () => options.flush ?? true) },
+    workspaceRegistry: { archiveSession },
+  }
+  return { ctx, create, internalAgent, followup, dispose, archiveSession }
 }
 
 describe('resolveSuggestionRoute', () => {
   it('prefers the latest logged request route', () => {
-    expect(resolveSuggestionRoute(agent({
+    expect(resolveSuggestionRoute(parentAgent({
       logged: { provider: 'logged', model: 'actual' },
       fallback: { provider: 'default', model: 'fallback' },
     }))).toEqual({ provider: 'logged', model: 'actual' })
   })
 
   it('falls back to Agent options and rejects incomplete routes', () => {
-    expect(resolveSuggestionRoute(agent({ fallback: { provider: 'p', model: 'm' } }))).toEqual({ provider: 'p', model: 'm' })
-    expect(resolveSuggestionRoute(agent({ fallback: { provider: 'p' } }))).toBeNull()
+    expect(resolveSuggestionRoute(parentAgent({ fallback: { provider: 'p', model: 'm' } })))
+      .toEqual({ provider: 'p', model: 'm' })
+    expect(resolveSuggestionRoute(parentAgent({ fallback: { provider: 'p' } }))).toBeNull()
   })
 })
 
 describe('resolveConfiguredSuggestionRoute', () => {
-  it('keeps the conversation route when both override fields are omitted', () => {
+  it('keeps inheritance when both override fields are omitted', () => {
     expect(resolveConfiguredSuggestionRoute(undefined, undefined)).toBeUndefined()
   })
 
-  it('returns a complete non-empty explicit route', () => {
+  it('accepts only a complete non-empty override pair', () => {
     expect(resolveConfiguredSuggestionRoute('deepseek-official', 'deepseek-v4-flash')).toEqual({
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash',
     })
-  })
-
-  it('rejects a missing or empty half of the optional route', () => {
     expect(() => resolveConfiguredSuggestionRoute('deepseek-official', undefined)).toThrow(/must be set together/)
     expect(() => resolveConfiguredSuggestionRoute(undefined, 'deepseek-v4-flash')).toThrow(/must be set together/)
     expect(() => resolveConfiguredSuggestionRoute('', 'deepseek-v4-flash')).toThrow(/must be set together/)
-    expect(() => resolveConfiguredSuggestionRoute('deepseek-official', '')).toThrow(/must be set together/)
   })
 })
 
 describe('prepareSuggestionRequest', () => {
-  it('returns a request whose logged inputs match the dispatched inputs', () => {
-    const controller = new AbortController()
-    const subject = agent({
+  const config = { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 384 }
+
+  it('prepares the exact route, persona, prompt, and token cap for the internal Agent', () => {
+    const subject = parentAgent({
+      logged: { provider: 'logged', model: 'actual' },
+      messages: [
+        textMessage('user', '请实现'),
+        contextMessage('very large injected instructions'),
+        textMessage('assistant', '已经实现完成'),
+      ],
+    })
+    const prepared = prepareSuggestionRequest(subject, config, 1, new AbortController().signal)
+    expect(prepared).toMatchObject({
+      route: { provider: 'logged', model: 'actual' },
+      maxTokens: 384,
+    })
+    expect(prepared?.system).toContain('JSON')
+    expect(prepared?.prompt).toContain('请实现')
+    expect(prepared?.prompt).toContain('已经实现完成')
+    expect(prepared?.prompt).not.toContain('very large injected instructions')
+  })
+
+  it('prefers an explicit route and returns null without route, completed-turn text, or a live lease', () => {
+    const subject = parentAgent({
       logged: { provider: 'logged', model: 'actual' },
       messages: [textMessage('user', '请实现'), textMessage('assistant', '已经实现完成')],
     })
-    const request = prepareSuggestionRequest(
-      { get: () => ({}) } as never,
-      subject,
-      { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 384 },
-      1,
-      controller.signal,
-    )
-    expect(request).not.toBeNull()
-    expect(request?.log.route).toEqual({ provider: 'logged', model: 'actual' })
-    expect(request?.options).toMatchObject({
-      provider: request?.log.route.provider,
-      model: request?.log.route.model,
-      system: request?.log.system,
-      maxTokens: request?.log.maxTokens,
-      sessionId: 'session-1',
-      tools: [],
-    })
-    expect(request?.options.reasoningEffort).toBeUndefined()
-    expect(request?.options.messages).toHaveLength(1)
-    expect(request?.options.messages[0]?.content).toEqual([{ type: 'text', text: request?.log.prompt }])
-  })
+    expect(prepareSuggestionRequest(subject, {
+      ...config,
+      suggestionRoute: { provider: 'cheap-provider', model: 'cheap-model' },
+    }, 1, new AbortController().signal)?.route).toEqual({ provider: 'cheap-provider', model: 'cheap-model' })
 
-  it('prefers an explicitly configured auxiliary route over the conversation route', () => {
-    const controller = new AbortController()
-    const subject = agent({
-      logged: { provider: 'logged', model: 'actual' },
-      fallback: { provider: 'default', model: 'fallback' },
-      messages: [textMessage('user', '请实现'), textMessage('assistant', '已经实现完成')],
-    })
-    const request = prepareSuggestionRequest(
-      { get: () => ({}) } as never,
-      subject,
-      {
-        suggestionCount: 3,
-        contextMessageCount: 4,
-        maxSuggestionChars: 120,
-        maxTokens: 384,
-        suggestionRoute: { provider: 'cheap-provider', model: 'cheap-model' },
-      },
-      1,
-      controller.signal,
-    )
-    expect(request).not.toBeNull()
-    expect(request?.log.route).toEqual({ provider: 'cheap-provider', model: 'cheap-model' })
-    expect(request?.options).toMatchObject({ provider: 'cheap-provider', model: 'cheap-model' })
-  })
-
-  it('returns null without an LLM service, a route, or a final assistant text', () => {
-    const config = { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 384 }
-    const signal = new AbortController().signal
-    expect(prepareSuggestionRequest({ get: () => undefined } as never, agent(), config, 1, signal)).toBeNull()
-    expect(prepareSuggestionRequest({ get: () => ({}) } as never, agent({ messages: [textMessage('assistant', 'answer')] }), config, 2, signal)).toBeNull()
-    expect(prepareSuggestionRequest({ get: () => ({}) } as never, agent({
+    expect(prepareSuggestionRequest(parentAgent(), config, 1, new AbortController().signal)).toBeNull()
+    expect(prepareSuggestionRequest(parentAgent({
       fallback: { provider: 'p', model: 'm' },
-      messages: [textMessage('user', 'latest')],
-    }), config, 1, signal)).toBeNull()
+      messages: [textMessage('assistant', 'answer')],
+    }), config, 2, new AbortController().signal)).toBeNull()
+    const aborted = new AbortController()
+    aborted.abort()
+    expect(prepareSuggestionRequest(subject, config, 1, aborted.signal)).toBeNull()
   })
 })
 
-describe('buildSuggestionCallOptions', () => {
-  it('uses the system slot and a single plugin-sourced user message', () => {
-    const controller = new AbortController()
-    const options = buildSuggestionCallOptions(
-      { provider: 'p', model: 'm' }, 'prompt', 'system', 128, controller.signal,
-    )
-    expect(options).toMatchObject({ provider: 'p', model: 'm', system: 'system', maxTokens: 128, tools: [] })
-    expect(options.reasoningEffort).toBeUndefined()
-    expect(options.messages[0]).toMatchObject({
-      role: 'user',
-      content: [{ type: 'text', text: 'prompt' }],
-      source: { kind: 'plugin', plugin: 'dsh-suggested-replies' },
-    })
-  })
-})
-
-describe('drainTextStream', () => {
-  it('joins deltas only after a normal stop', async () => {
-    await expect(drainTextStream(chunks([
-      { type: 'text-delta', index: 0, text: 'a' },
-      { type: 'reasoning-delta', index: 1, text: 'hidden' },
-      { type: 'text-delta', index: 0, text: 'b' },
-      { type: 'finish', reason: { kind: 'stop' } },
-    ]))).resolves.toBe('ab')
-  })
-
-  it('returns null for non-stop or empty completions', async () => {
-    await expect(drainTextStream(chunks([{ type: 'finish', reason: { kind: 'max-tokens' } }]))).resolves.toBeNull()
-    await expect(drainTextStream(chunks([{ type: 'finish', reason: { kind: 'stop' } }]))).resolves.toBeNull()
+describe('extractSuggestionText', () => {
+  it('returns the last non-empty assistant text in the owned interval', () => {
+    const events = [
+      { type: 'assistant/message', seq: 0, time: 0, data: { turn: 0, step: 0, message: textMessage('assistant', 'old') } },
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+      { type: 'assistant/message', seq: 2, time: 2, data: { turn: 1, step: 1, message: textMessage('assistant', 'new') } },
+    ] as SessionEvent[]
+    expect(extractSuggestionText(events, 1)).toBe('new')
   })
 })
 
 describe('generateSuggestedReplies', () => {
-  it('streams the prepared request and parses candidates', async () => {
-    const stream = vi.fn((_options: GenerateOptions) => chunks([
-      { type: 'text-delta', index: 0, text: '{"suggestions":["继续实现","运行测试","查看差异"]}' },
-      { type: 'finish', reason: { kind: 'stop' } },
-    ]))
-    const request = {
-      log: { route: { provider: 'p', model: 'm' }, system: 's', prompt: 'p', maxTokens: 128 },
-      options: { provider: 'p', model: 'm', messages: [] },
-    } as PreparedSuggestionRequest
+  const config = { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 128 }
+
+  it('uses an official zero-tool Agent, flushes it, archives it, and parses its final message', async () => {
+    const harness = generationHarness('{"suggestions":["继续实现","运行测试","查看差异"]}')
     await expect(generateSuggestedReplies(
-      { get: () => ({ stream }) } as never,
-      request,
-      { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 128 },
+      harness.ctx as never,
+      parentAgent({ cwd: '/work' }),
+      'session-internal' as never,
+      request(),
+      config,
       new AbortController().signal,
     )).resolves.toEqual(['继续实现', '运行测试', '查看差异'])
-    expect(stream).toHaveBeenCalledWith(request.options)
+
+    const options = harness.create.mock.calls[0]?.[0]
+    expect(options).toMatchObject({
+      sessionId: 'session-internal',
+      meta: { cwd: '/work' },
+      agentOptions: { provider: 'deepseek', model: 'chat', maxTokens: 128 },
+    })
+    expect(options?.meta).not.toHaveProperty('parentSession')
+    const composition = (await harness.create.mock.results[0]?.value)?.composition
+    expect(composition?.presentAs).toHaveBeenCalledWith('native')
+    expect(composition?.restrict).toHaveBeenCalledWith({ allow: [] })
+    expect(composition?.section).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'deployment:persona',
+      order: 0,
+      complete: true,
+    }))
+    expect(harness.followup).toHaveBeenCalledWith(expect.objectContaining({
+      source: { kind: 'plugin', plugin: 'dsh-suggested-replies' },
+      content: [{ type: 'text', text: 'Recent conversation' }],
+    }))
+    expect(harness.ctx.sessions.flush).toHaveBeenCalledWith(harness.internalAgent.session)
+    expect(harness.archiveSession).toHaveBeenCalledWith('session-internal')
+    expect(harness.dispose).toHaveBeenCalledOnce()
   })
 
-  it('returns null after aborts, malformed output, and thrown streams', async () => {
-    const config = { suggestionCount: 3, contextMessageCount: 4, maxSuggestionChars: 120, maxTokens: 128 }
-    const request = { log: {}, options: { provider: 'p', model: 'm', messages: [] } } as unknown as PreparedSuggestionRequest
-    const controller = new AbortController()
-    controller.abort()
-    await expect(generateSuggestedReplies({ get: () => ({}) } as never, request, config, controller.signal)).resolves.toBeNull()
-    await expect(generateSuggestedReplies({ get: () => ({ stream: () => chunks([
-      { type: 'text-delta', index: 0, text: 'not json' },
-      { type: 'finish', reason: { kind: 'stop' } },
-    ]) }) } as never, request, config, new AbortController().signal)).resolves.toBeNull()
-    await expect(generateSuggestedReplies({ get: () => ({ stream: () => { throw new Error('boom') } }) } as never, request, config, new AbortController().signal)).resolves.toBeNull()
+  it('falls back to three usable replies for malformed model output and still flushes the internal Session', async () => {
+    const harness = generationHarness('not json')
+    await expect(generateSuggestedReplies(
+      harness.ctx as never,
+      parentAgent(),
+      'session-internal' as never,
+      request(),
+      config,
+      new AbortController().signal,
+    )).resolves.toEqual(['Continue', 'Could you explain that in more detail?', 'Can you give me a concrete example?'])
+    expect(harness.ctx.sessions.flush).toHaveBeenCalledOnce()
+    expect(harness.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('fails when no durability listener flushes the internal Session', async () => {
+    const harness = generationHarness('{"suggestions":["a","b","c"]}', { flush: false })
+    await expect(generateSuggestedReplies(
+      harness.ctx as never,
+      parentAgent(),
+      'session-internal' as never,
+      request(),
+      config,
+      new AbortController().signal,
+    )).rejects.toThrow(/no durability listener/)
+    expect(harness.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('fails before model work when the internal Session cannot be hidden from navigation', async () => {
+    const harness = generationHarness('{"suggestions":["a","b","c"]}', { archiveFailure: new Error('busy') })
+    await expect(generateSuggestedReplies(
+      harness.ctx as never,
+      parentAgent(),
+      'session-internal' as never,
+      request(),
+      config,
+      new AbortController().signal,
+    )).rejects.toThrow(/could not archive internal Session/)
+    expect(harness.followup).not.toHaveBeenCalled()
+    expect(harness.ctx.sessions.flush).toHaveBeenCalledOnce()
+    expect(harness.dispose).toHaveBeenCalledOnce()
   })
 })

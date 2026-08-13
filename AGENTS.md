@@ -6,7 +6,7 @@
 
 - A candidate click calls only `inputActions.setDraft(text)`. Never call `inputActions.submit()`.
 - Keep the dock registration at `conversation.input.dock` with order `15`; `conversation.composer.dock` is below the input card and is incorrect for this feature.
-- Candidate results are non-surface session events. They must not enter model-visible history.
+- Never append plugin-defined events to a parent Session or mutate `KNOWN_SESSION_EVENT_TYPES`. UI state belongs to the plugin-owned storage-domain sidecar; auxiliary model input and output belong to an official internal Agent Session.
 - New user input, a disabled setting, a timeout, or plugin disposal must invalidate the active generation so a stale result cannot reappear.
 - Keep all deployment-varying limits in `Config`; do not introduce hidden hardcoded tunables.
 - Default the auxiliary model to the current conversation route; `suggestionProvider` and `suggestionModel` are an optional paired override.

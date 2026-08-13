@@ -1,23 +1,20 @@
-/**
- * Suggested replies host plugin.
- *
- * Completed assistant turns create a short-lived auxiliary LLM request. Its
- * result is projected to the Web client as candidate next user messages. New
- * user input cancels the request and clears the row, so an old completion can
- * never reappear after the conversation has moved on.
- *
- * @module @dsh-external/dsh-suggested-replies
- */
+/** Suggested replies host plugin with plugin-owned sidecar state. */
 
-import type { Context } from 'cordis'
-import z from 'schemastery'
+import { randomUUID } from 'node:crypto'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-storage-domain'
+import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-workspace'
 import { GenerationGate, type GenerationLease } from './generation-gate.ts'
+import { registerSuggestedRepliesRpc } from './rpc.ts'
+import { SuggestedRepliesStateStore } from './state.ts'
 import {
   generateSuggestedReplies,
   prepareSuggestionRequest,
@@ -25,16 +22,24 @@ import {
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
-import { registerSuggestedRepliesProjection } from './projection.ts'
-import { registerSuggestedRepliesRpc } from './rpc.ts'
 import type { SuggestedRepliesSettings } from './types.ts'
 
 export type * from './types.ts'
+export type { SuggestedRepliesStateSnapshot } from './state.ts'
 
 /** Cordis plugin identity. */
 export const name = 'dsh-suggested-replies'
-/** Host services required before turn-end observation can start. */
-export const inject = ['agents', 'connection']
+/** Required official extension points. */
+export const inject = [
+  'agents',
+  'connection',
+  'sessionPersistence',
+  'sessions',
+  'storageDomain',
+  'systemPrompt',
+  'tools',
+  'workspaceRegistry',
+]
 
 /** User-settings namespace used by the master enable switch. */
 export const SETTINGS_NAMESPACE = settingsNamespace('suggested-replies')
@@ -49,7 +54,7 @@ export interface Config extends SuggestedRepliesSettings {
   maxSuggestionChars: number
   /** Maximum response tokens requested from the auxiliary model. */
   maxTokens: number
-  /** Maximum lifetime of one auxiliary model call. */
+  /** Maximum lifetime of one auxiliary Agent run. */
   timeoutMs: number
   /** Optional explicit provider for auxiliary calls; omitted means inherit the conversation route. */
   suggestionProvider?: string
@@ -65,32 +70,36 @@ export const Config = z.object({
   maxSuggestionChars: z.number().step(1).min(32).max(300).default(160).description('Maximum characters retained for each candidate.'),
   maxTokens: z.number().step(1).min(64).max(1024).default(384).description('Maximum output tokens for the auxiliary model call.'),
   timeoutMs: z.number().step(1).min(1_000).max(30_000).default(15_000).description('Maximum milliseconds an auxiliary model call may run.'),
-  suggestionProvider: z.string().required(false).description('Optional explicit provider for auxiliary calls; omitted means inherit the conversation route.'),
+  suggestionProvider: z.string().required(false).description('Optional explicit provider for auxiliary calls; omitted means inherit the current Session route.'),
   suggestionModel: z.string().required(false).description('Optional explicit model for auxiliary calls; must be paired with suggestionProvider.'),
 }) as unknown as z<Config>
 
-/**
- * Install generation, projection, cancellation, and settings wiring.
- * @param ctx - host plugin context.
- * @param config - resolved composition configuration.
- */
-export function apply(ctx: Context, config: Config): void {
-  registerSuggestedRepliesProjection(ctx)
+/** Settings schema intentionally exposes only the user-facing master switch. */
+const SettingsSchema = z.object({
+  enabled: z.boolean().default(true).description('Enable suggested replies after completed turns.'),
+}) as unknown as z<SuggestedRepliesSettings>
 
+/** Install durable state, internal Agent generation, cancellation, and Web RPC. */
+export async function apply(ctx: Context, config: Config): Promise<() => Promise<void>> {
+  const store = await SuggestedRepliesStateStore.open(ctx)
   const gate = new GenerationGate()
-  const agents = new Map<string, Agent>()
-  const visibleSessions = new Set<string>()
+  const internalSessions = new Set<string>()
+  const generationTasks = new Set<Promise<void>>()
   let source: () => SuggestedRepliesSettings = () => ({ enabled: config.enabled })
   let enabledBeforeChange = source().enabled
+  let disposing = false
 
-  const clearVisibleSession = (key: string, reason: 'new-input' | 'disabled'): void => {
+  const cancelSession = (agent: Agent, flushSession: boolean): void => {
+    const key = String(agent.id)
     gate.cancel(key)
-    if (!visibleSessions.delete(key)) return
-    agents.get(key)?.session.append('suggested-replies/cleared', { reason })
+    void store.clear(agent.session, flushSession).catch((error: unknown) => {
+      if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear Session ${key}: ${String(error)}`)
+    })
   }
 
-  const clearVisibleSessions = (reason: 'disabled'): void => {
-    for (const key of [...visibleSessions]) clearVisibleSession(key, reason)
+  const clearAll = async (): Promise<void> => {
+    gate.cancelAll()
+    await store.clearAll()
   }
 
   installSettingsSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, { enabled: config.enabled }, {
@@ -98,7 +107,9 @@ export function apply(ctx: Context, config: Config): void {
     onChange: () => {
       const enabled = source().enabled
       if (!enabled && enabledBeforeChange) {
-        clearVisibleSessions('disabled')
+        void clearAll().catch((error: unknown) => {
+          if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
+        })
       }
       enabledBeforeChange = enabled
     },
@@ -114,133 +125,115 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   ctx.on('session/event', (session, event) => {
+    if (internalSessions.has(String(session.id))) return
     if (event.type === 'turn/start') {
-      const key = String(session.id)
-      gate.cancel(key)
-      visibleSessions.delete(key)
+      const agent = ctx.agents.get(session.id)
+      if (agent?.session === session) cancelSession(agent, true)
       return
     }
     if (event.type !== 'turn/end') return
     if (event.data.reason.kind !== 'completed' && event.data.reason.kind !== 'max-tokens') return
     if (!source().enabled) return
     const agent = ctx.agents.get(session.id)
-    if (agent?.session !== session) return
-    if (agent.inbox.hasPending) return
-    const key = String(agent.id)
-    agents.set(key, agent)
-    const lease = gate.start(key, config.timeoutMs)
-    const request = prepareSuggestionRequest(ctx, agent, generationConfig, event.data.turn, lease.signal)
+    if (agent?.session !== session || agent.inbox.hasPending) return
+
+    const lease = gate.start(String(agent.id), config.timeoutMs)
+    const request = prepareSuggestionRequest(agent, generationConfig, event.data.turn, lease.signal)
     if (request === null) {
       gate.release(lease)
       return
     }
-    visibleSessions.add(key)
-    queueMicrotask(() => {
-      if (!gate.isCurrent(lease)) return
-      agent.session.append('suggested-replies/generating', { turn: event.data.turn, ...request.log })
-      void runGeneration(ctx, agent, event.data.turn, request, generationConfig, gate, lease).catch((error: unknown) => {
-        ctx.logger.warn(`dsh-suggested-replies: generation for session ${String(agent.id)} failed: ${String(error)}`)
-      })
+    const task = runGeneration(
+      ctx,
+      store,
+      internalSessions,
+      gate,
+      lease,
+      agent,
+      event.data.turn,
+      request,
+      generationConfig,
+    ).catch((error: unknown) => {
+      if (!disposing) {
+        ctx.logger.warn(`dsh-suggested-replies: generation for Session ${String(agent.id)} failed: ${String(error)}`)
+      }
     })
+    generationTasks.add(task)
+    void task.finally(() => { generationTasks.delete(task) })
   })
 
   ctx.on('agent/inbox/inserted', ({ agent }) => {
-    const key = String(agent.id)
-    agents.set(key, agent)
-    clearVisibleSession(key, 'new-input')
+    if (internalSessions.has(String(agent.id))) return
+    cancelSession(agent, true)
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
-    const key = String(agent.id)
-    gate.cancel(key)
-    agents.delete(key)
-    visibleSessions.delete(key)
+    if (internalSessions.has(String(agent.id))) return
+    gate.cancel(String(agent.id))
   })
-
-  ctx.effect(() => () => {
-    gate.dispose()
-    agents.clear()
-    visibleSessions.clear()
-  }, 'dsh-suggested-replies: abort active generations')
 
   registerSuggestedRepliesRpc(
     ctx,
+    store,
     () => source().enabled,
     async enabled => {
       const settings = ctx.get('settings')
-      if (settings !== undefined) {
-        await settings.update(SETTINGS_NAMESPACE, { enabled })
-      } else {
+      if (settings === undefined) {
         source = () => ({ enabled })
+        if (!enabled) await clearAll()
         enabledBeforeChange = enabled
-        if (!enabled) clearVisibleSessions('disabled')
+        return
       }
+      await settings.update(SETTINGS_NAMESPACE, { enabled })
+      if (!enabled) await clearAll()
+      enabledBeforeChange = source().enabled
     },
   )
-}
 
-/** Settings schema intentionally exposes only the user-facing master switch. */
-const SettingsSchema = z.object({
-  enabled: z.boolean().default(true).description('Enable suggested replies after completed turns.'),
-}) as unknown as z<SuggestedRepliesSettings>
-
-/**
- * Resolve one detached generation and append only if its lease is current.
- * @param ctx - plugin host context.
- * @param agent - agent whose session receives the result.
- * @param turn - completed turn associated with the candidates.
- * @param request - fully logged auxiliary request.
- * @param config - resolved generation configuration.
- * @param gate - session freshness and cancellation gate.
- * @param lease - current generation capability.
- */
-async function runGeneration(
-  ctx: Context,
-  agent: Agent,
-  turn: number,
-  request: PreparedSuggestionRequest,
-  config: SuggestionGenerationConfig,
-  gate: GenerationGate,
-  lease: GenerationLease,
-): Promise<void> {
-  try {
-    const suggestions = await settleGeneration(ctx, request, config, lease.signal)
-    if (!gate.owns(lease)) return
-    agent.session.append('suggested-replies/suggestions', { turn, suggestions: suggestions ?? [] })
-  } finally {
-    gate.release(lease)
+  return async () => {
+    disposing = true
+    gate.cancelAll()
+    await Promise.all(generationTasks)
+    await store.clearAll()
+    internalSessions.clear()
+    gate.dispose()
+    await store.close()
   }
 }
 
-/**
- * Resolve promptly when cancellation or the gate timeout fires, even if an
- * adapter fails to settle its iterator after aborting.
- * @param ctx - plugin host context.
- * @param request - fully logged auxiliary request.
- * @param config - resolved output limits.
- * @param signal - gate-owned cancellation signal.
- * @returns ready candidates, or `null` after invalidation or generation failure.
- */
-function settleGeneration(
+/** Run one freshness-owned internal Agent and commit only its current result. */
+async function runGeneration(
   ctx: Context,
+  store: SuggestedRepliesStateStore,
+  internalSessions: Set<string>,
+  gate: GenerationGate,
+  lease: GenerationLease,
+  parent: Agent,
+  turn: number,
   request: PreparedSuggestionRequest,
   config: SuggestionGenerationConfig,
-  signal: AbortSignal,
-): Promise<Awaited<ReturnType<typeof generateSuggestedReplies>>> {
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (value: Awaited<ReturnType<typeof generateSuggestedReplies>>): void => {
-      if (settled) return
-      settled = true
-      signal.removeEventListener('abort', onAbort)
-      resolve(value)
-    }
-    const onAbort = (): void => { finish(null) }
-    if (signal.aborted) {
-      finish(null)
+): Promise<void> {
+  const internalSessionId = SessionId(`session-${randomUUID()}`)
+  internalSessions.add(String(internalSessionId))
+  try {
+    if (!await store.setGenerating(parent.session, turn, internalSessionId, () => gate.isCurrent(lease))) return
+    const suggestions = await generateSuggestedReplies(ctx, parent, internalSessionId, request, config, lease.signal)
+    if (suggestions === null) {
+      await store.clearGeneration(parent.session, internalSessionId)
       return
     }
-    signal.addEventListener('abort', onAbort, { once: true })
-    void generateSuggestedReplies(ctx, request, config, signal).then(finish, () => { finish(null) })
-  })
+    await store.setReady(
+      parent.session,
+      turn,
+      internalSessionId,
+      suggestions,
+      () => gate.isCurrent(lease),
+    )
+  } catch (error) {
+    await store.clearGeneration(parent.session, internalSessionId).catch(() => undefined)
+    if (!lease.signal.aborted) throw error
+  } finally {
+    internalSessions.delete(String(internalSessionId))
+    gate.release(lease)
+  }
 }

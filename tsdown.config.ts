@@ -10,8 +10,8 @@ const ID = '@dsh-external/dsh-suggested-replies'
 
 /** Host-provided packages that remain external in the Node bundle. */
 const HOST_EXTERNALS = [
-  'cordis',
-  'schemastery',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/schemastery',
   '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-host-apiproxy',
@@ -19,9 +19,13 @@ const HOST_EXTERNALS = [
   '@deepseek-ai/dsh-invariants',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-session',
-  '@deepseek-ai/dsh-session-projection',
-  '@deepseek-ai/dsh-session-projection/types',
+  '@deepseek-ai/dsh-session-persistence',
   '@deepseek-ai/dsh-settings',
+  '@deepseek-ai/dsh-storage-domain',
+  '@deepseek-ai/dsh-system-prompt',
+  '@deepseek-ai/dsh-tools',
+  '@deepseek-ai/dsh-workspace',
+  'zod',
 ]
 
 /** Browser loader modules provided by DSH Web at runtime. */
@@ -29,7 +33,7 @@ const CLIENT_EXTERNALS = [
   'react',
   'react-dom',
   'react/jsx-runtime',
-  'cordis',
+  '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-client-connection/client',
   '@deepseek-ai/dsh-client-runtime',

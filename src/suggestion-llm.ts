@@ -1,21 +1,17 @@
-/**
- * Auxiliary LLM call that predicts concise next user messages.
- *
- * @module @dsh-external/dsh-suggested-replies/suggestion-llm
- */
+/** Logged auxiliary Agent run that predicts concise next user messages. */
 
-import type { Context } from 'cordis'
-import type {
-  GenerateOptions,
-  LlmService,
-  Message,
-  StreamChunk,
-} from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SuggestedRepliesGeneratingPayload, SuggestedRepliesRoute, SuggestedReply } from './types.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import { PERSONA_ORDER, PERSONA_SECTION } from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-workspace'
+import type { SuggestedRepliesRoute, SuggestedReply } from './types.ts'
 import {
   buildSuggestedRepliesUserPrompt,
   buildSuggestionSystemPrompt,
+  fallbackSuggestedReplies,
   parseSuggestedReplies,
   type SuggestionOutputLimits,
 } from './suggestion-prompt.ts'
@@ -30,29 +26,26 @@ export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
   readonly suggestionRoute?: SuggestedRepliesRoute
 }
 
-/** Complete, loggable auxiliary request prepared before provider dispatch. */
+/** Complete auxiliary request that the internal Agent logs through official events. */
 export interface PreparedSuggestionRequest {
-  /** Durable event payload that reconstructs every model-visible input. */
-  readonly log: Omit<SuggestedRepliesGeneratingPayload, 'turn'>
-  /** Provider-neutral streaming options. */
-  readonly options: GenerateOptions
+  /** Provider/model route for the internal Agent. */
+  readonly route: SuggestedRepliesRoute
+  /** Complete system instruction installed as the Agent's only prompt section. */
+  readonly system: string
+  /** Complete user-role prompt sent through the Agent inbox. */
+  readonly prompt: string
+  /** Maximum output tokens for the Agent request. */
+  readonly maxTokens: number
 }
 
-/**
- * Select the trailing visible conversation messages from a session.
- * @param agent - agent whose session owns the conversation.
- * @param contextMessageCount - maximum retained message count.
- * @returns recent messages in chronological order.
- */
-export function deriveRecentMessages(agent: Agent, contextMessageCount: number): Message[] {
-  return agent.session.deriveMessages().slice(-contextMessageCount)
+/** Select the trailing model-visible conversation messages from a Session. */
+export function deriveRecentMessages(agent: Agent, contextMessageCount: number) {
+  return agent.session.deriveMessages()
+    .filter(message => message.role === 'assistant' || message.source.kind === 'user')
+    .slice(-contextMessageCount)
 }
 
-/**
- * Resolve the latest logged route, falling back to the Agent creation route.
- * @param agent - agent whose conversation route should be reused.
- * @returns provider/model pair, or `null` when neither source has both fields.
- */
+/** Resolve the latest logged route, falling back to the Agent creation route. */
 export function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | null {
   const logged = agent.session.requestHeader()?.config
   if (logged !== undefined && logged.provider.length > 0 && logged.model.length > 0) {
@@ -64,12 +57,7 @@ export function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | nu
     : null
 }
 
-/**
- * Validate and normalize an optional explicit auxiliary route.
- * @param provider - optional configured provider, or `undefined` to inherit.
- * @param model - optional configured model, or `undefined` to inherit.
- * @returns the explicit route, or `undefined` when both fields are omitted.
- */
+/** Validate and normalize an optional explicit auxiliary route. */
 export function resolveConfiguredSuggestionRoute(
   provider: string | undefined,
   model: string | undefined,
@@ -83,125 +71,142 @@ export function resolveConfiguredSuggestionRoute(
   return { provider, model }
 }
 
-/**
- * Prepare the detached request when the current route and conversation support it.
- * @param ctx - host context that may own an LLM service.
- * @param agent - agent whose completed turn supplied the context.
- * @param config - resolved model-call options.
- * @param turn - completed turn that must contain visible assistant text.
- * @param signal - cancellation signal held by the session generation gate.
- * @returns loggable and dispatchable request, or `null` for an expected no-op.
- */
+/** Prepare one internal Agent request when the completed turn has usable text and routing. */
 export function prepareSuggestionRequest(
-  ctx: Context,
   agent: Agent,
   config: SuggestionGenerationConfig,
   turn: number,
   signal: AbortSignal,
 ): PreparedSuggestionRequest | null {
-  if (ctx.get('llm') === undefined || signal.aborted) return null
-  if (!turnHasAssistantText(agent, turn)) return null
+  if (signal.aborted || !turnHasAssistantText(agent, turn)) return null
   const route = config.suggestionRoute ?? resolveSuggestionRoute(agent)
   if (route === null) return null
   const prompt = buildSuggestedRepliesUserPrompt(deriveRecentMessages(agent, config.contextMessageCount))
   if (prompt === null) return null
-  const system = buildSuggestionSystemPrompt(config)
   return {
-    log: { route, system, prompt, maxTokens: config.maxTokens },
-    options: buildSuggestionCallOptions(route, prompt, system, config.maxTokens, signal, agent.id),
+    route,
+    system: buildSuggestionSystemPrompt(config),
+    prompt,
+    maxTokens: config.maxTokens,
   }
 }
 
-/** Test whether the completed turn itself contributed visible assistant text. */
 function turnHasAssistantText(agent: Agent, turn: number): boolean {
   return agent.session.events.some(event => event.type === 'assistant/message'
     && event.data.turn === turn
     && event.data.message.content.some(block => block.type === 'text' && block.text.trim() !== ''))
 }
 
-/**
- * Assemble the standalone LLM request from already resolved inputs.
- * @param route - provider/model route reused from the conversation.
- * @param prompt - recent conversation serialized for the user role.
- * @param system - complete auxiliary model instruction.
- * @param maxTokens - detached-call output token cap.
- * @param signal - cancellation signal held by the session generation gate.
- * @param sessionId - session identity used by global LLM middleware routing.
- * @returns ready provider-neutral LLM options.
- */
-export function buildSuggestionCallOptions(
-  route: SuggestedRepliesRoute,
-  prompt: string,
-  system: string,
-  maxTokens: number,
-  signal: AbortSignal,
-  sessionId?: Agent['id'],
-): GenerateOptions {
-  return {
-    provider: route.provider,
-    model: route.model,
-    system,
-    messages: [localMessage(prompt)],
-    tools: [],
-    maxTokens,
-    signal,
-    ...sessionId === undefined ? {} : { sessionId },
-  }
-}
-
-/** Construct the minimum valid provider-neutral message for this auxiliary request. */
-function localMessage(text: string): Message {
-  return {
-    id: crypto.randomUUID() as Message['id'],
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'dsh-suggested-replies' },
-  }
-}
-
-/**
- * Drain a stream to plain text, accepting only normal `stop` completion.
- * @param stream - LLM chunks returned by the selected provider.
- * @returns complete output text, or `null` after an aborted or failed finish.
- */
-export async function drainTextStream(stream: AsyncIterable<StreamChunk>): Promise<string | null> {
-  const parts: string[] = []
-  let completed = false
-  for await (const chunk of stream) {
-    if (chunk.type === 'text-delta') {
-      parts.push(chunk.text)
+/** Extract the last non-empty assistant text produced inside one owned run interval. */
+export function extractSuggestionText(events: readonly SessionEvent[], firstSeq: number): string | null {
+  let started = false
+  let text = ''
+  for (const event of events) {
+    if (event.seq < firstSeq) continue
+    if (event.type === 'turn/start') {
+      started = true
       continue
     }
-    if (chunk.type === 'finish' && chunk.reason.kind === 'stop') completed = true
+    if (!started || event.type !== 'assistant/message') continue
+    const joined = event.data.message.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('')
+    if (joined !== '') text = joined
   }
-  if (!completed) return null
-  const output = parts.join('')
-  return output === '' ? null : output
+  return text === '' ? null : text
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('suggested replies generation aborted')
 }
 
 /**
- * Generate ready candidates, returning null for expected provider, parsing, or
- * cancellation failures. The caller's freshness gate decides whether a result
- * may still be appended after this promise settles.
- * @param ctx - host context carrying the optional LLM service.
- * @param request - prepared request whose inputs were logged before dispatch.
- * @param config - resolved output and context limits.
- * @param signal - session-specific cancellation signal.
- * @returns parsed candidates, or `null` when no usable result was produced.
+ * Run the auxiliary request through an official Agent Session, archive it
+ * before model work starts, flush its log, then dispose the live handle.
  */
 export async function generateSuggestedReplies(
   ctx: Context,
+  parent: Agent,
+  internalSessionId: SessionId,
   request: PreparedSuggestionRequest,
   config: SuggestionGenerationConfig,
   signal: AbortSignal,
 ): Promise<SuggestedReply[] | null> {
-  const llm = ctx.get('llm') as LlmService | undefined
-  if (llm === undefined || signal.aborted) return null
+  signal.throwIfAborted()
+  let handle: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
+  let output: string | null = null
+  let failure: unknown
+  let onAbort: (() => void) | undefined
 
   try {
-    const output = await drainTextStream(llm.stream(request.options))
-    return output === null || signal.aborted ? null : parseSuggestedReplies(output, config)
-  } catch {
-    return null
+    handle = await ctx.agents.withoutInitiator(() => ctx.agents.create({
+      sessionId: internalSessionId,
+      ...(parent.session.header.cwd === undefined ? {} : { meta: { cwd: parent.session.header.cwd } }),
+      agentOptions: {
+        provider: request.route.provider,
+        model: request.route.model,
+        maxTokens: request.maxTokens,
+      },
+      signal,
+      setup: (agentCtx) => {
+        agentCtx.tools.presentAs('native')
+        agentCtx.tools.restrict({ allow: [] })
+        agentCtx.systemPrompt.section({
+          name: PERSONA_SECTION,
+          order: PERSONA_ORDER,
+          text: request.system,
+          complete: true,
+        })
+      },
+    }))
+
+    const agent = handle.agent
+    try {
+      await ctx.workspaceRegistry.archiveSession(internalSessionId)
+    } catch (error) {
+      throw new Error(
+        `dsh-suggested-replies: could not archive internal Session '${internalSessionId}' before generation`,
+        { cause: error },
+      )
+    }
+    onAbort = () => { agent.cancel({ kind: 'parent' }) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+
+    await agent.whenIdle()
+    signal.throwIfAborted()
+    const firstSeq = agent.session.seq
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: request.prompt }],
+      source: { kind: 'plugin', plugin: 'dsh-suggested-replies' },
+    }))
+    await agent.whenIdle()
+    if (signal.aborted) throw abortError(signal)
+    output = extractSuggestionText(agent.session.events, firstSeq)
+  } catch (error) {
+    failure = error
   }
+
+  if (handle !== undefined) {
+    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort)
+    try {
+      await handle.agent.whenIdle()
+      if (!(await ctx.sessions.flush(handle.agent.session))) {
+        throw new Error(`dsh-suggested-replies: no durability listener flushed internal Session '${internalSessionId}'`)
+      }
+    } catch (error) {
+      failure ??= error
+    } finally {
+      await handle.dispose()
+    }
+  }
+
+  if (failure !== undefined) {
+    if (signal.aborted) return null
+    throw failure
+  }
+  return output === null
+    ? null
+    : parseSuggestedReplies(output, config) ?? fallbackSuggestedReplies(request.prompt, config)
 }

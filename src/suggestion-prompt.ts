@@ -101,6 +101,22 @@ export function parseSuggestedReplies(
   return output
 }
 
+/**
+ * Produce a bounded deterministic fallback when the auxiliary model does not
+ * return the required JSON. The fallback follows the recent conversation's
+ * language and preserves the configured candidate count.
+ */
+export function fallbackSuggestedReplies(
+  conversation: string,
+  limits: SuggestionOutputLimits,
+): SuggestedReply[] {
+  const candidates = /[\u3400-\u9fff]/u.test(conversation)
+    ? ['继续', '请详细说明一下', '给我一个具体例子', '接下来建议做什么？']
+    : ['Continue', 'Could you explain that in more detail?', 'Can you give me a concrete example?', 'What should I do next?']
+  return candidates.slice(0, limits.suggestionCount).map((candidate) =>
+    normalizeCandidate(candidate).slice(0, limits.maxSuggestionChars).trim() as SuggestedReply)
+}
+
 /** Flatten text blocks only; tool calls, tool results, images, and reasoning stay out of the prompt. */
 function extractPlainText(message: Message): string {
   const parts: string[] = []

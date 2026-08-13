@@ -5,7 +5,7 @@
  */
 
 /* jscpd:ignore-start */
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@dsh-external/dsh-suggested-replies'
@@ -15,7 +15,7 @@ export const name = 'dsh-suggested-replies-invariant'
 /** Service required before the package can reserve its invariant namespace. */
 export const inject = ['invariants']
 
-/** The durable session log and freshness gate fully own this plugin's mutable relationships. */
+/** Internal Agent logs own model history; the sidecar and freshness gate own Web state. */
 const install: InvariantInstaller = () => {}
 
 /** Register the package invariant companion. */

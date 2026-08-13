@@ -37,3 +37,9 @@ export declare function buildSuggestedRepliesUserPrompt(messages: readonly Messa
  * @returns ready candidates, or `null` when the response does not meet the format.
  */
 export declare function parseSuggestedReplies(raw: string, limits: SuggestionOutputLimits): SuggestedReply[] | null;
+/**
+ * Produce a bounded deterministic fallback when the auxiliary model does not
+ * return the required JSON. The fallback follows the recent conversation's
+ * language and preserves the configured candidate count.
+ */
+export declare function fallbackSuggestedReplies(conversation: string, limits: SuggestionOutputLimits): SuggestedReply[];

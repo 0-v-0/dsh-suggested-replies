@@ -22,7 +22,7 @@ interface ActiveGeneration extends GenerationLease {
 /**
  * Ensures at most one candidate-generation request can commit per session.
  * Starting a later request, receiving new user input, timing out, or disposing
- * the plugin invalidates the prior lease before it can append stale results.
+ * the plugin invalidates the prior lease before it can commit stale sidecar state.
  */
 export class GenerationGate {
   private readonly active = new Map<string, ActiveGeneration>()
@@ -51,7 +51,7 @@ export class GenerationGate {
   /**
    * Test whether a lease is still the current, non-aborted generation.
    * @param lease - a lease returned by {@link start}.
-   * @returns whether the lease may append a session event.
+   * @returns whether the lease may commit its generation state.
    */
   isCurrent(lease: GenerationLease): boolean {
     const active = this.active.get(lease.key)
@@ -61,7 +61,7 @@ export class GenerationGate {
   /**
    * Test whether a lease still owns the current map entry, even when its own
    * timeout signal has fired. Callers use this to replace a loading state with
-   * an empty result after a timeout without allowing cancelled work to commit.
+   * cleared state after a timeout without allowing explicitly cancelled work to commit.
    * @param lease - a lease returned by {@link start}.
    * @returns whether no newer request or explicit invalidation replaced it.
    */

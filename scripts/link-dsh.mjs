@@ -31,13 +31,19 @@ const links = {
   '@deepseek-ai/dsh-client-ui-settings': 'packages/client/ui-settings',
   '@deepseek-ai/dsh-client-ui-slots': 'packages/client/ui-slots',
   '@deepseek-ai/dsh-host-apiproxy': 'packages/host/apiproxy',
-  '@deepseek-ai/dsh-invariants': 'packages/support/invariants',
+  '@deepseek-ai/dsh-invariants': 'packages/runtime-diagnostics/invariants',
   '@deepseek-ai/dsh-llm': 'packages/llm/llm',
   '@deepseek-ai/dsh-session': 'packages/core/session',
-  '@deepseek-ai/dsh-session-projection': 'packages/session/session-projection',
+  '@deepseek-ai/dsh-session-persistence': 'packages/session/session-persistence',
   '@deepseek-ai/dsh-settings': 'packages/settings/settings',
-  cordis: 'vendor/cordis',
-  schemastery: 'vendor/schemastery',
+  '@deepseek-ai/dsh-storage': 'packages/storage/storage',
+  '@deepseek-ai/dsh-storage-domain': 'packages/storage/storage-domain',
+  '@deepseek-ai/dsh-storage-json': 'packages/storage/storage-json',
+  '@deepseek-ai/dsh-system-prompt': 'packages/core/system-prompt',
+  '@deepseek-ai/dsh-tools': 'packages/core/tools',
+  '@deepseek-ai/dsh-workspace': 'packages/workspace/workspace',
+  '@deepseek-ai/cordis': 'vendor/cordis',
+  '@deepseek-ai/schemastery': 'vendor/schemastery',
 }
 
 const developmentPackages = [
@@ -52,6 +58,7 @@ const developmentPackages = [
   'tsdown',
   'typescript',
   'vitest',
+  'zod',
 ]
 
 const preferredDevelopmentVersions = {
@@ -66,6 +73,7 @@ const preferredDevelopmentVersions = {
   tsdown: '0.22.2',
   typescript: '6.0.3',
   vitest: '4.1.8',
+  zod: '4.4.3',
 }
 
 /** Replace one symlink or filesystem entry, including a dangling symlink. */

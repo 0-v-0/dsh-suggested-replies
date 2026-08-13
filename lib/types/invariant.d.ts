@@ -3,7 +3,7 @@
  *
  * @module @dsh-external/dsh-suggested-replies/invariant
  */
-import type { Context } from 'cordis';
+import type { Context } from '@deepseek-ai/cordis';
 /** Cordis companion plugin identity. */
 export declare const name = "dsh-suggested-replies-invariant";
 /** Service required before the package can reserve its invariant namespace. */

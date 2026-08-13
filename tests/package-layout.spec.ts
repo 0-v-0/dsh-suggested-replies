@@ -28,6 +28,15 @@ describe('package layout', () => {
     }
   })
 
+  it('ships zod as runtime code and accepts the supported 0812 prerelease peers', () => {
+    expect(manifest.dependencies?.zod).toBe('^4.4.3')
+    expect(manifest.devDependencies?.zod).toBeUndefined()
+    for (const [name, spec] of Object.entries(manifest.peerDependencies ?? {}) as Array<[string, string]>) {
+      if (!name.startsWith('@deepseek-ai/dsh-')) continue
+      expect(spec, name).toBe('^0.0.1-rc.2')
+    }
+  })
+
   it('pins the candidates to the official input dock rather than the footer dock', () => {
     const client = readFileSync(resolve(root, 'src/client/index.ts'), 'utf8')
     expect(client).toContain("ctx.slots.inject('conversation.input.dock'")

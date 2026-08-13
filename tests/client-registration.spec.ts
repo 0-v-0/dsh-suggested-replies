@@ -12,6 +12,7 @@ describe('client registration', () => {
   it('registers candidates only in conversation.input.dock at order 15', () => {
     const registrations: Array<{ definition: Record<string, unknown>; component: unknown }> = []
     const injectSlot = vi.fn((_name: string, callback: () => void) => callback())
+    const rpc = { call: vi.fn() }
     const register = vi.fn((definition: Record<string, unknown>, component: unknown) => {
       registrations.push({ definition, component })
       return () => undefined
@@ -19,7 +20,7 @@ describe('client registration', () => {
     const ctx = {
       effect: (setup: () => unknown) => setup(),
       locale: { register: vi.fn(() => () => undefined), bind: () => () => '' },
-      connection: { rpc: {} },
+      connection: { rpc },
       slots: { inject: injectSlot, register },
     }
     apply(ctx as never)
@@ -30,6 +31,9 @@ describe('client registration', () => {
       definition: expect.objectContaining({ name: 'conversation.input.dock', id: 'suggested-replies', order: 15 }),
       component: SuggestionBubbles,
     })
+    const dock = registrations.find(entry => entry.component === SuggestionBubbles)
+    expect(dock?.definition.inject).toBeTypeOf('function')
+    expect((dock?.definition.inject as () => unknown)()).toEqual({ rpc })
     expect(registrations).toContainEqual({
       definition: expect.objectContaining({ name: 'settings.section', id: 'suggested-replies', order: 70 }),
       component: SuggestedRepliesSection,

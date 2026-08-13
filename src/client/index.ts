@@ -15,9 +15,8 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '../types.ts'
 import { SuggestedRepliesSection, type SuggestedRepliesSectionInjected } from './SuggestedRepliesSection.tsx'
-import { SuggestionBubbles } from './SuggestionBubbles.tsx'
+import { SuggestionBubbles, type SuggestionBubblesInjected } from './SuggestionBubbles.tsx'
 import { en, NS, zh, type SuggestedRepliesKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -37,12 +36,14 @@ export const inject = ['slots', 'locale', 'connection']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-suggested-replies: dictionaries')
   const connection = ctx.connection as unknown as ConnectionHandle
+  const bubblesInjected = (): SuggestionBubblesInjected => ({ rpc: connection.rpc })
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: 'suggested-replies',
     order: 15,
     locale: NS,
+    inject: bubblesInjected,
   }, SuggestionBubbles))
 
   const settingsInjected = (): SuggestedRepliesSectionInjected => ({ rpc: connection.rpc })

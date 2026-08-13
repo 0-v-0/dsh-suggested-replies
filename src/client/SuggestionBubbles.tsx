@@ -4,14 +4,29 @@
  * @module @dsh-external/dsh-suggested-replies/client/SuggestionBubbles
  */
 
-import { useEffect, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
+import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SuggestedRepliesProjection } from '../types.ts'
+import type { SuggestedRepliesStateResponse } from '../rpc.ts'
+
+/** Connection capability injected by the browser plugin registration. */
+export interface SuggestionBubblesInjected {
+  /** RPC transport used to read and watch this Session's sidecar state. */
+  readonly rpc: ClientConnectionRpc
+}
 
 /** Full prop currency supplied by the `conversation.input.dock` slot. */
 export type SuggestionBubblesProps =
   & PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'suggested-replies'>
+  & SuggestionBubblesInjected
+
+type StateResult = RpcResult<SuggestedRepliesStateResponse>
+
+interface ObservedState {
+  readonly sessionId: SuggestionBubblesProps['sessionId']
+  readonly value: SuggestedRepliesStateResponse
+}
 
 const STYLE_TAG_ID = 'dsh-suggested-replies-style'
 let styleUsers = 0
@@ -81,9 +96,64 @@ const CSS_TEXT = `
 const ROOT_STYLE: CSSProperties = { display: 'contents' }
 
 /** Render loading text or ready bubbles directly above the composer card. */
-export function SuggestionBubbles({ useProjection, useInput, inputActions, t }: SuggestionBubblesProps) {
-  const projection = useProjection('suggestedReplies') as SuggestedRepliesProjection | undefined
+export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }: SuggestionBubblesProps) {
+  const [observed, setObserved] = useState<ObservedState | undefined>()
   const phase = useInput(state => state.phase)
+  const state = observed !== undefined && observed.sessionId === sessionId
+    ? observed.value
+    : undefined
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+
+    const publish = (value: SuggestedRepliesStateResponse): void => {
+      if (!signal.aborted) setObserved({ sessionId, value })
+    }
+    const clear = (): void => {
+      if (signal.aborted) return
+      setObserved(current => current?.sessionId === sessionId ? undefined : current)
+    }
+
+    void (async () => {
+      try {
+        const initial = await rpc.call(
+          '/suggested-replies',
+          'state.get',
+          { sessionId },
+          signal,
+        ) as StateResult
+        if (signal.aborted) return
+        if (!initial.ok) {
+          clear()
+          return
+        }
+
+        let current = initial.value
+        publish(current)
+
+        while (!signal.aborted) {
+          const watched = await rpc.call(
+            '/suggested-replies',
+            'state.watch',
+            { sessionId, lifecycle: current.lifecycle, revision: current.revision },
+            signal,
+          ) as StateResult
+          if (signal.aborted) return
+          if (!watched.ok) {
+            clear()
+            return
+          }
+          current = watched.value
+          publish(current)
+        }
+      } catch {
+        clear()
+      }
+    })()
+
+    return () => controller.abort()
+  }, [rpc, sessionId])
 
   useEffect(() => {
     styleUsers += 1
@@ -100,9 +170,9 @@ export function SuggestionBubbles({ useProjection, useInput, inputActions, t }: 
     }
   }, [])
 
-  if (projection === undefined || projection === null) return null
+  if (state === undefined || state.phase === 'cleared') return null
 
-  if (projection.generating) {
+  if (state.phase === 'generating') {
     return (
       <div style={ROOT_STYLE}>
         <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
@@ -112,7 +182,7 @@ export function SuggestionBubbles({ useProjection, useInput, inputActions, t }: 
     )
   }
 
-  if (projection.suggestions.length === 0) return null
+  if (state.suggestions.length === 0) return null
   const disabled = phase !== 'plain'
 
   return (
@@ -120,9 +190,9 @@ export function SuggestionBubbles({ useProjection, useInput, inputActions, t }: 
       <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
         <div className="dsh-suggested-replies-row" aria-label={t('title')}>
           <span className="dsh-suggested-replies-label">{t('title')}</span>
-          {projection.suggestions.map((text, index) => (
+          {state.suggestions.map((text, index) => (
             <button
-              key={`${projection.turn}-${index}`}
+              key={`${state.turn}-${index}`}
               type="button"
               className="dsh-suggested-replies-bubble"
               disabled={disabled}

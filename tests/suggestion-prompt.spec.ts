@@ -4,6 +4,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import {
   buildSuggestedRepliesUserPrompt,
   buildSuggestionSystemPrompt,
+  fallbackSuggestedReplies,
   parseSuggestedReplies,
 } from '../src/suggestion-prompt.ts'
 
@@ -66,5 +67,13 @@ describe('parseSuggestedReplies', () => {
     JSON.stringify({ suggestions: ['abcdefghijk-1', 'abcdefghijk-2', 'c'] }),
   ])('rejects malformed response %s', raw => {
     expect(parseSuggestedReplies(raw, limits)).toBeNull()
+  })
+})
+
+describe('fallbackSuggestedReplies', () => {
+  it('returns the configured count in the recent conversation language', () => {
+    expect(fallbackSuggestedReplies('User: 你好', limits)).toEqual(['继续', '请详细说明一下', '给我一个具体例子'])
+    expect(fallbackSuggestedReplies('User: Hello', { ...limits, suggestionCount: 2 }))
+      .toEqual(['Continue', 'Could you'])
   })
 })
