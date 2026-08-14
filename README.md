@@ -29,10 +29,10 @@ AI 完成本轮回复
 
 ## 安装
 
-### 从 GitHub 安装
+### 从 npm 一键安装
 
 ```sh
-dsh plugin --profile web add github:dsh-external/dsh-suggested-replies
+dsh plugin --profile web add @anionex/dsh-suggested-replies
 ```
 
 ### 本地开发目录安装

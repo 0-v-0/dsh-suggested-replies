@@ -6,7 +6,7 @@
  */
 import { defineConfig, type UserConfig } from 'tsdown'
 
-const ID = '@dsh-external/dsh-suggested-replies'
+const ID = '@anionex/dsh-suggested-replies'
 
 /** Host-provided packages that remain external in the Node bundle. */
 const HOST_EXTERNALS = [

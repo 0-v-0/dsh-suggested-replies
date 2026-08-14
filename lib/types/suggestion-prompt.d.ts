@@ -1,7 +1,7 @@
 /**
  * Prompt construction and strict JSON parsing for suggested replies.
  *
- * @module @dsh-external/dsh-suggested-replies/suggestion-prompt
+ * @module @anionex/dsh-suggested-replies/suggestion-prompt
  */
 import type { Message } from '@deepseek-ai/dsh-llm';
 import type { SuggestedReply } from './types.ts';

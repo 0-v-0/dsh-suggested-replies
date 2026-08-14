@@ -1,7 +1,7 @@
 /**
  * Input-dock bubbles that copy a suggested reply into the message draft.
  *
- * @module @dsh-external/dsh-suggested-replies/client/SuggestionBubbles
+ * @module @anionex/dsh-suggested-replies/client/SuggestionBubbles
  */
 
 import { useEffect, useState, type CSSProperties } from 'react'

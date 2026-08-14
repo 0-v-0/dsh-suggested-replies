@@ -1,14 +1,14 @@
 /**
  * Package-owned invariant companion for suggested replies.
  *
- * @module @dsh-external/dsh-suggested-replies/invariant
+ * @module @anionex/dsh-suggested-replies/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@dsh-external/dsh-suggested-replies'
+const PACKAGE_NAME = '@anionex/dsh-suggested-replies'
 
 /** Cordis companion plugin identity. */
 export const name = 'dsh-suggested-replies-invariant'

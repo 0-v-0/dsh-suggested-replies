@@ -8,6 +8,9 @@ const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 
 describe('package layout', () => {
   it('declares a DSH bundle patch and browser client export', () => {
+    expect(manifest.name).toBe('@anionex/dsh-suggested-replies')
+    expect(manifest.private).not.toBe(true)
+    expect(manifest.repository?.url).toBe('git+https://github.com/Anionex/dsh-suggested-replies.git')
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(manifest.dsh.client).toMatchObject({ platform: 'web' })
     expect(manifest.exports['./client'].default).toBe('./lib/client.js')
@@ -28,12 +31,12 @@ describe('package layout', () => {
     }
   })
 
-  it('ships zod as runtime code and accepts the supported 0812 prerelease peers', () => {
+  it('ships zod as runtime code and accepts the supported DSH prerelease peers', () => {
     expect(manifest.dependencies?.zod).toBe('^4.4.3')
     expect(manifest.devDependencies?.zod).toBeUndefined()
     for (const [name, spec] of Object.entries(manifest.peerDependencies ?? {}) as Array<[string, string]>) {
       if (!name.startsWith('@deepseek-ai/dsh-')) continue
-      expect(spec, name).toBe('^0.0.1-rc.2')
+      expect(spec, name).toBe('^0.1.0-rc.6')
     }
   })
 

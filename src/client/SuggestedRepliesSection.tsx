@@ -1,7 +1,7 @@
 /**
  * Settings section for the suggested-replies master switch.
  *
- * @module @dsh-external/dsh-suggested-replies/client/SuggestedRepliesSection
+ * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */
 
 import { useEffect, useState, type CSSProperties } from 'react'

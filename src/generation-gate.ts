@@ -1,7 +1,7 @@
 /**
  * Per-session cancellation and freshness gate for auxiliary model calls.
  *
- * @module @dsh-external/dsh-suggested-replies/generation-gate
+ * @module @anionex/dsh-suggested-replies/generation-gate
  */
 
 /** Opaque capability to commit the result of one started generation. */

@@ -1,7 +1,7 @@
 /**
  * Settings section for the suggested-replies master switch.
  *
- * @module @dsh-external/dsh-suggested-replies/client/SuggestedRepliesSection
+ * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */
 import type { ClientConnectionRpc } from '@deepseek-ai/dsh-client-connection/client';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';

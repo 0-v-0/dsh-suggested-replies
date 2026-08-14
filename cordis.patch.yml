@@ -4,7 +4,7 @@
 # writes the draft only; sending remains an explicit input-bar action.
 - insert:
     - id: suggested-replies
-      name: '@dsh-external/dsh-suggested-replies'
+      name: '@anionex/dsh-suggested-replies'
       config:
         enabled: true
         suggestionCount: 3

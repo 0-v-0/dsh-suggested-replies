@@ -6,7 +6,7 @@
  * candidate only calls `inputActions.setDraft`; submission remains the user's
  * explicit action in the composer.
  *
- * @module @dsh-external/dsh-suggested-replies/client
+ * @module @anionex/dsh-suggested-replies/client
  */
 
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'

@@ -1,7 +1,7 @@
 /**
  * Package-owned invariant companion for suggested replies.
  *
- * @module @dsh-external/dsh-suggested-replies/invariant
+ * @module @anionex/dsh-suggested-replies/invariant
  */
 import type { Context } from '@deepseek-ai/cordis';
 /** Cordis companion plugin identity. */

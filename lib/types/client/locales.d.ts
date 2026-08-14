@@ -1,7 +1,7 @@
 /**
  * Locale dictionaries for the suggested-replies Web surface.
  *
- * @module @dsh-external/dsh-suggested-replies/client/locales
+ * @module @anionex/dsh-suggested-replies/client/locales
  */
 /** Keys used by the input dock and settings section. */
 export type SuggestedRepliesKey = 'title' | 'hint' | 'loading' | 'settings.nav' | 'settings.title' | 'settings.description' | 'settings.enabled.label' | 'settings.enabled.description' | 'settings.disabled.note';

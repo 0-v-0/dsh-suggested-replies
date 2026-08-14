@@ -1,7 +1,7 @@
 /**
  * Locale dictionaries for the suggested-replies Web surface.
  *
- * @module @dsh-external/dsh-suggested-replies/client/locales
+ * @module @anionex/dsh-suggested-replies/client/locales
  */
 
 /** Keys used by the input dock and settings section. */
