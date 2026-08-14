@@ -22,14 +22,22 @@ type SuggestedRepliesSectionProps =
 
 type SettingsResult = RpcResult<SettingsResponse>
 
-const sectionStyle: CSSProperties = { display: 'flex', flexDirection: 'column' }
+const sectionStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 24 }
+const introStyle: CSSProperties = {
+  padding: '14px 16px',
+  borderRadius: 12,
+  background: 'var(--dsw-alias-bg-layer-2, rgba(128, 128, 128, 0.08))',
+}
+const titleStyle: CSSProperties = { margin: 0, fontSize: 15, lineHeight: 1.4 }
+const descriptionStyle: CSSProperties = { margin: '4px 0 0', fontSize: 12, lineHeight: 1.55, opacity: 0.65 }
 const rowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 24,
-  padding: '14px 0',
-  borderTop: '1px solid rgba(128, 128, 128, 0.22)',
+  padding: '14px 16px',
+  border: '1px solid rgba(128, 128, 128, 0.22)',
+  borderRadius: 12,
 }
 const noteStyle: CSSProperties = {
   marginTop: 14,
@@ -134,11 +142,15 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
     }
   }
 
-  if (enabled === undefined) return <section style={sectionStyle}>...</section>
+  if (enabled === undefined) return <section style={sectionStyle}>{t('loading')}</section>
 
   return (
     <section style={sectionStyle}>
       {error !== undefined && <div style={errorStyle} role="alert">{error}</div>}
+      <header style={introStyle}>
+        <h2 style={titleStyle}>{t('settings.title')}</h2>
+        <p style={descriptionStyle}>{t('settings.description')}</p>
+      </header>
       <div style={rowStyle}>
         <div>
           <div style={{ fontSize: 15, lineHeight: 1.4 }}>{t('settings.enabled.label')}</div>

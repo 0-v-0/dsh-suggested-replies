@@ -10,6 +10,8 @@ export type SuggestedRepliesKey =
   | 'hint'
   | 'loading'
   | 'settings.nav'
+  | 'settings.title'
+  | 'settings.description'
   | 'settings.enabled.label'
   | 'settings.enabled.description'
   | 'settings.disabled.note'
@@ -23,6 +25,8 @@ export const en: Record<SuggestedRepliesKey, string> = {
   hint: 'Click to fill the message box',
   loading: 'Preparing next-message suggestions...',
   'settings.nav': 'Suggested replies',
+  'settings.title': 'Suggested replies',
+  'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
   'settings.enabled.label': 'Enable suggested replies',
   'settings.enabled.description': 'Generate candidate next messages after an AI reply. Clicking a candidate only fills the draft; it never sends automatically.',
   'settings.disabled.note': 'Disabled. Completed turns do not make auxiliary suggestion calls until you enable it again.',
@@ -34,7 +38,9 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   hint: '点击填入输入框',
   loading: '正在生成下一步建议...',
   'settings.nav': '下一步建议',
+  'settings.title': '下一步建议',
+  'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的下一步消息。默认沿用当前对话使用的模型。',
   'settings.enabled.label': '启用下一步建议',
-  'settings.enabled.description': 'AI 回复结束后生成可直接作为下一条消息发送的候选。点击候选只会填入输入框，绝不会自动发送。',
-  'settings.disabled.note': '已关闭。后续完成的对话轮次不会再发起候选生成，重新启用后恢复。',
+  'settings.enabled.description': '点击建议只会把文字填入输入框，由你确认后发送，不会自动发出消息。',
+  'settings.disabled.note': '已关闭。AI 回复结束后不会再生成下一步建议。',
 }

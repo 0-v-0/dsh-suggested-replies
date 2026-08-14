@@ -4,7 +4,7 @@
  * @module @dsh-external/dsh-suggested-replies/client/locales
  */
 /** Keys used by the input dock and settings section. */
-export type SuggestedRepliesKey = 'title' | 'hint' | 'loading' | 'settings.nav' | 'settings.enabled.label' | 'settings.enabled.description' | 'settings.disabled.note';
+export type SuggestedRepliesKey = 'title' | 'hint' | 'loading' | 'settings.nav' | 'settings.title' | 'settings.description' | 'settings.enabled.label' | 'settings.enabled.description' | 'settings.disabled.note';
 /** Locale namespace registered by the client plugin. */
 export declare const NS = "suggested-replies";
 /** English copy. */
