@@ -1,6 +1,6 @@
 {
   "name": "@anionex/dsh-suggested-replies",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH Web plugin that proposes concise next user messages above the composer and inserts a selected reply into the draft without sending it.",
   "keywords": [
     "deepseek",
@@ -58,6 +58,20 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.0-rc.8 <0.2.0",
+      "dshReleases": {
+        "0.1.0-rc.8": "compatible",
+        "0.1.1-rc.1": "compatible",
+        "0.1.1-rc.2": "compatible",
+        "0.1.2-alpha.3": "compatible",
+        "0.1.2-alpha.4": "compatible",
+        "0.1.2-alpha.5": "compatible"
+      },
+      "profiles": [
+        "web"
+      ]
     }
   },
   "scripts": {

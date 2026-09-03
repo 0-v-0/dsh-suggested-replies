@@ -3,7 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_ORDER, PERSONA_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-workspace'
@@ -91,8 +91,15 @@ export function prepareSuggestionRequest(
   }
 }
 
+function getSessionEvents(session: Session): readonly SessionEvent[] {
+  if (typeof (session as any).snapshotEvents === 'function') {
+    return (session as any).snapshotEvents()
+  }
+  return session.events ?? []
+}
+
 function turnHasAssistantText(agent: Agent, turn: number): boolean {
-  return agent.session.events.some(event => event.type === 'assistant/message'
+  return getSessionEvents(agent.session).some(event => event.type === 'assistant/message'
     && event.data.turn === turn
     && event.data.message.content.some(block => block.type === 'text' && block.text.trim() !== ''))
 }
@@ -183,7 +190,7 @@ export async function generateSuggestedReplies(
     }))
     await agent.whenIdle()
     if (signal.aborted) throw abortError(signal)
-    output = extractSuggestionText(agent.session.events, firstSeq)
+    output = extractSuggestionText(getSessionEvents(agent.session), firstSeq)
   } catch (error) {
     failure = error
   }
