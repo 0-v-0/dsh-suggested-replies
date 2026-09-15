@@ -108,7 +108,7 @@ describe('SuggestionBubbles', () => {
     expect(await waitFor(() => getByRole('button', { name: '继续实现' }))).toBeDefined()
   })
 
-  it('renders nothing while state.get is pending or when state is cleared', async () => {
+  it('renders nothing while state.get is pending, but shows regenerate button when state is cleared', async () => {
     const initial = deferred<{ ok: true; value: SuggestedRepliesStateResponse }>()
     let nextResponse = initial.promise
     const call = vi.fn(() => {
@@ -117,12 +117,14 @@ describe('SuggestionBubbles', () => {
       return response
     })
     const rpc = { call } as unknown as ClientConnectionRpc
-    const { container } = render(<SuggestionBubbles {...props(rpc).value} />)
+    const { container, getByRole } = render(<SuggestionBubbles {...props(rpc).value} />)
 
+    // Before state.get resolves: nothing rendered
     expect(container.innerHTML).toBe('')
+    // After cleared state arrives: dock with ✨ button visible (no bubbles)
     await act(async () => initial.resolve({ ok: true, value: cleared(3, 2) }))
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2))
-    expect(container.innerHTML).toBe('')
+    expect(getByRole('button', { name: 'regenerate' })).toBeDefined()
   })
 
   it('clicks only setDraft and never submits', async () => {
