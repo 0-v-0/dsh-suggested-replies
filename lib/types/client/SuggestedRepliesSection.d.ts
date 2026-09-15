@@ -1,5 +1,6 @@
 /**
- * Settings section for the suggested-replies master switch.
+ * Settings section for the suggested-replies master switch and informational
+ * deployment-config overview.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */
@@ -11,6 +12,6 @@ export interface SuggestedRepliesSectionInjected {
     readonly rpc: ClientConnectionRpc;
 }
 type SuggestedRepliesSectionProps = PropsRuntime<'settings.section'> & PropsLocale<'suggested-replies'> & SuggestedRepliesSectionInjected;
-/** Render and persist the master enable switch. */
+/** Render, persist the master enable switch, and show deployment-config overview. */
 export declare function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps): import("react").JSX.Element;
 export {};

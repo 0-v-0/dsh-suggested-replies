@@ -27,5 +27,22 @@ export interface StateWatchPayload extends StateGetPayload {
     /** Last revision observed by the caller. */
     readonly revision: number;
 }
+/** Payload accepted by `suggestions.generate`. */
+export interface GeneratePayload {
+    /** Parent Session whose last completed turn should generate candidates. */
+    readonly sessionId: string;
+    /** Optional explicit turn number; omitted means use the last completed turn. */
+    readonly turn?: number;
+}
+/** Payload accepted by `suggestions.dismiss`. */
+export interface DismissPayload {
+    /** Parent Session whose active generation should be dismissed. */
+    readonly sessionId: string;
+}
+/** Generic success response returned by manual-trigger endpoints. */
+export interface GenerateResult {
+    /** Acknowledgement that the action was accepted. */
+    readonly ok: true;
+}
 /** Register settings and cancellable sidecar-state endpoints. */
-export declare function registerSuggestedRepliesRpc(ctx: Context, store: SuggestedRepliesStateStore, getEnabled: () => boolean, setEnabled: (enabled: boolean) => Promise<void>): void;
+export declare function registerSuggestedRepliesRpc(ctx: Context, store: SuggestedRepliesStateStore, getEnabled: () => boolean, setEnabled: (enabled: boolean) => Promise<void>, generateFn: (sessionId: string, turn?: number) => Promise<void>, dismissFn: (sessionId: string) => Promise<void>): void;
