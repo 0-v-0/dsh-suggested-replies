@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { PERSONA_ORDER, PERSONA_SECTION } from '@deepseek-ai/dsh-system-prompt'
+import { PERSONA_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { ReasoningEffort, SuggestionOrigin, SuggestedRepliesRoute, SuggestedReply } from './types.ts'
@@ -15,6 +15,11 @@ import {
   parseSuggestedReplies,
   type SuggestionOutputLimits,
 } from './suggestion-prompt.ts'
+import {
+  processSuggestions,
+  sanitizeTranscript,
+  type GeneratePipelineConfig,
+} from './generate.ts'
 
 /** Resolved runtime choices for one suggested-replies model request. */
 export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
@@ -133,8 +138,9 @@ export function prepareSuggestionRequest(
   if (signal.aborted || !turnHasAssistantText(agent, turn)) return null
   const route = config.suggestionRoute ?? resolveSuggestionRoute(agent)
   if (route === null) return null
-  const prompt = buildSuggestedRepliesUserPrompt(deriveRecentMessages(agent, config.contextMessageCount))
-  if (prompt === null) return null
+  const rawPrompt = buildSuggestedRepliesUserPrompt(deriveRecentMessages(agent, config.contextMessageCount))
+  if (rawPrompt === null) return null
+  const prompt = sanitizeTranscript(rawPrompt, config as GeneratePipelineConfig)
   return {
     route,
     system: buildSuggestionSystemPrompt(config),
@@ -207,6 +213,7 @@ export async function generateSuggestedReplies(
         provider: request.route.provider,
         model: request.route.model,
         maxTokens: request.maxTokens,
+        ...(config.reasoningEffort === 'off' ? { reasoningEffort: 'off' } : {}),
       },
       signal,
       setup: (agentCtx) => {
@@ -214,7 +221,7 @@ export async function generateSuggestedReplies(
         agentCtx.tools.restrict({ allow: [] })
         agentCtx.systemPrompt.section({
           name: PERSONA_SECTION,
-          order: PERSONA_ORDER,
+          order: 0,
           text: request.system,
           complete: true,
         })
@@ -266,7 +273,8 @@ export async function generateSuggestedReplies(
     if (signal.aborted) return null
     throw failure
   }
-  return output === null
-    ? null
-    : parseSuggestedReplies(output, config) ?? fallbackSuggestedReplies(request.prompt, config)
+  if (output === null) return null
+  const parsed = parseSuggestedReplies(output, config) ?? fallbackSuggestedReplies(request.prompt, config)
+  const processed = processSuggestions(parsed, config as GeneratePipelineConfig)
+  return processed.length > 0 ? processed : null
 }
