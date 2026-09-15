@@ -62,6 +62,37 @@ export interface GenerateResult {
   readonly ok: true
 }
 
+/** Client-facing config snapshot returned by `config.get` and `config.set`. */
+export interface ConfigResponse {
+  readonly enabled: boolean
+  readonly reasoningEffort: string
+  readonly suggestionCount: number
+  readonly redactSecrets: boolean
+  readonly stripControls: boolean
+  readonly singleLine: boolean
+  readonly filterMetaText: boolean
+  readonly filterEvaluative: boolean
+  readonly filterAssistantVoice: boolean
+  readonly filterTooLong: boolean
+  readonly manualShortcut: string
+  readonly manualReplacesDraft: boolean
+}
+
+/** Payload accepted by `config.set`. */
+export interface ConfigSetPayload {
+  readonly reasoningEffort?: string
+  readonly suggestionCount?: number
+  readonly redactSecrets?: boolean
+  readonly stripControls?: boolean
+  readonly singleLine?: boolean
+  readonly filterMetaText?: boolean
+  readonly filterEvaluative?: boolean
+  readonly filterAssistantVoice?: boolean
+  readonly filterTooLong?: boolean
+  readonly manualShortcut?: string
+  readonly manualReplacesDraft?: boolean
+}
+
 function ok<T>(value: T): RpcResult<T> {
   return { ok: true, value }
 }
@@ -76,6 +107,8 @@ export function registerSuggestedRepliesRpc(
   store: SuggestedRepliesStateStore,
   getEnabled: () => boolean,
   setEnabled: (enabled: boolean) => Promise<void>,
+  getConfig: () => ConfigResponse,
+  setConfig: (payload: ConfigSetPayload) => Promise<ConfigResponse>,
   generateFn: (sessionId: string, turn?: number) => Promise<void>,
   dismissFn: (sessionId: string) => Promise<void>,
 ): void {
@@ -128,6 +161,17 @@ export function registerSuggestedRepliesRpc(
           return ok<GenerateResult>({ ok: true })
         } catch (error) {
           return fail<GenerateResult>(error instanceof Error ? error.message : String(error))
+        }
+      }
+      case 'config.get':
+        return ok<ConfigResponse>(getConfig())
+      case 'config.set': {
+        if (!isRecord(payload)) return fail<ConfigResponse>('payload must be a config object')
+        try {
+          const result = await setConfig(payload as ConfigSetPayload)
+          return ok<ConfigResponse>(result)
+        } catch (error) {
+          return fail<ConfigResponse>(error instanceof Error ? error.message : String(error))
         }
       }
       default:

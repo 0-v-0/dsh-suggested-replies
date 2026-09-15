@@ -160,6 +160,17 @@ export const Config = z.object({
 /** Settings schema intentionally exposes only the user-facing master switch. */
 const SettingsSchema = z.object({
   enabled: z.boolean().default(true).description('Enable suggested replies after completed turns.'),
+  reasoningEffort: z.union([z.const('off'), z.const('auto')]).default('off').description('Reasoning effort override.'),
+  suggestionCount: z.number().step(1).min(2).max(4).default(3).description('Number of candidate replies per turn.'),
+  redactSecrets: z.boolean().default(true).description('Mask API keys and tokens in transcripts.'),
+  stripControls: z.boolean().default(true).description('Strip control characters from output.'),
+  singleLine: z.boolean().default(true).description('Force single-line output.'),
+  filterMetaText: z.boolean().default(true).description('Filter meta-text.'),
+  filterEvaluative: z.boolean().default(true).description('Filter evaluative phrases.'),
+  filterAssistantVoice: z.boolean().default(true).description('Filter assistant-voice phrases.'),
+  filterTooLong: z.boolean().default(true).description('Filter overly long suggestions.'),
+  manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger.'),
+  manualReplacesDraft: z.boolean().default(true).description('Manual trigger writes directly to draft.'),
 }) as unknown as z<SuggestedRepliesSettings>
 
 /** Install durable state, internal Agent generation, cancellation, and Web RPC. */
@@ -168,7 +179,20 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   const gate = new GenerationGate()
   const internalSessions = new Set<string>()
   const generationTasks = new Set<Promise<void>>()
-  let source: () => SuggestedRepliesSettings = () => ({ enabled: config.enabled })
+  let source: () => SuggestedRepliesSettings = () => ({
+    enabled: config.enabled,
+    reasoningEffort: config.reasoningEffort,
+    suggestionCount: config.suggestionCount,
+    redactSecrets: config.redactSecrets,
+    stripControls: config.stripControls,
+    singleLine: config.singleLine,
+    filterMetaText: config.filterMetaText,
+    filterEvaluative: config.filterEvaluative,
+    filterAssistantVoice: config.filterAssistantVoice,
+    filterTooLong: config.filterTooLong,
+    manualShortcut: config.manualShortcut,
+    manualReplacesDraft: config.manualReplacesDraft,
+  })
   let enabledBeforeChange = source().enabled
   let disposing = false
 
@@ -187,7 +211,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
 
   const settingsService = ctx.get('settings')
   if (settingsService !== undefined) {
-    settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, { enabled: config.enabled }, {
+    settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, source(), {
       setSource: next => { source = next },
       onChange: () => {
         const enabled = source().enabled
@@ -202,36 +226,39 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   }
 
   const suggestionRoute = resolveConfiguredSuggestionRoute(config.suggestionProvider, config.suggestionModel)
-  const generationConfig: SuggestionGenerationConfig = {
-    suggestionCount: config.suggestionCount,
-    contextMessageCount: config.contextMessageCount,
-    maxSuggestionChars: config.maxSuggestionChars,
-    maxTokens: config.maxTokens,
-    maxInputBytes: config.maxInputBytes,
-    maxRecentTurns: config.maxRecentTurns,
-    maxTranscriptChars: config.maxTranscriptChars,
-    maxContextTurns: config.maxContextTurns,
-    maxContextContextBytes: config.maxContextContextBytes,
-    reasoningEffort: config.reasoningEffort,
-    redactSecrets: config.redactSecrets,
-    stripEscapes: config.stripEscapes,
-    stripControls: config.stripControls,
-    stripFencesAndQuotes: config.stripFencesAndQuotes,
-    collapseWhitespace: config.collapseWhitespace,
-    singleLine: config.singleLine,
-    filterMetaText: config.filterMetaText,
-    filterErrorEcho: config.filterErrorEcho,
-    filterEvaluative: config.filterEvaluative,
-    filterAssistantVoice: config.filterAssistantVoice,
-    filterMultiSentence: config.filterMultiSentence,
-    filterTooLong: config.filterTooLong,
-    allowSingleCommands: config.allowSingleCommands,
-    filterFormatting: config.filterFormatting,
-    manualReplacesDraft: config.manualReplacesDraft,
-    manualDedupe: config.manualDedupe,
-    maxCycleSkipped: config.maxCycleSkipped,
-    excludeNonHumanEvents: config.excludeNonHumanEvents,
-    ...suggestionRoute === undefined ? {} : { suggestionRoute },
+  const getGenerationConfig = (): SuggestionGenerationConfig => {
+    const s = source()
+    return {
+      suggestionCount: s.suggestionCount,
+      contextMessageCount: config.contextMessageCount,
+      maxSuggestionChars: config.maxSuggestionChars,
+      maxTokens: config.maxTokens,
+      maxInputBytes: config.maxInputBytes,
+      maxRecentTurns: config.maxRecentTurns,
+      maxTranscriptChars: config.maxTranscriptChars,
+      maxContextTurns: config.maxContextTurns,
+      maxContextContextBytes: config.maxContextContextBytes,
+      reasoningEffort: s.reasoningEffort,
+      redactSecrets: s.redactSecrets,
+      stripEscapes: config.stripEscapes,
+      stripControls: s.stripControls,
+      stripFencesAndQuotes: config.stripFencesAndQuotes,
+      collapseWhitespace: config.collapseWhitespace,
+      singleLine: s.singleLine,
+      filterMetaText: s.filterMetaText,
+      filterErrorEcho: config.filterErrorEcho,
+      filterEvaluative: s.filterEvaluative,
+      filterAssistantVoice: s.filterAssistantVoice,
+      filterMultiSentence: config.filterMultiSentence,
+      filterTooLong: s.filterTooLong,
+      allowSingleCommands: config.allowSingleCommands,
+      filterFormatting: config.filterFormatting,
+      manualReplacesDraft: s.manualReplacesDraft,
+      manualDedupe: config.manualDedupe,
+      maxCycleSkipped: config.maxCycleSkipped,
+      excludeNonHumanEvents: config.excludeNonHumanEvents,
+      ...suggestionRoute === undefined ? {} : { suggestionRoute },
+    }
   }
 
   const startGenerationForSession = (agent: Agent, turn: number, _origin: SuggestionOrigin): void => {
@@ -239,7 +266,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     if (agent.inbox.hasPending) return
 
     const lease = gate.start(String(agent.id), config.timeoutMs)
-    const request = prepareSuggestionRequest(agent, generationConfig, turn, lease.signal)
+    const request = prepareSuggestionRequest(agent, getGenerationConfig(), turn, lease.signal)
     if (request === null) {
       gate.release(lease)
       return
@@ -253,7 +280,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       agent,
       turn,
       request,
-      generationConfig,
+      getGenerationConfig(),
     ).catch((error: unknown) => {
       if (!disposing) {
         ctx.logger.warn(`dsh-suggested-replies: generation for Session ${String(agent.id)} failed: ${String(error)}`)
@@ -316,6 +343,35 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       await settings.update(SETTINGS_NAMESPACE, { enabled })
       if (!enabled) await clearAll()
       enabledBeforeChange = source().enabled
+    },
+    () => {
+      const s = source()
+      return {
+        enabled: s.enabled,
+        reasoningEffort: s.reasoningEffort,
+        suggestionCount: s.suggestionCount,
+        redactSecrets: s.redactSecrets,
+        stripControls: s.stripControls,
+        singleLine: s.singleLine,
+        filterMetaText: s.filterMetaText,
+        filterEvaluative: s.filterEvaluative,
+        filterAssistantVoice: s.filterAssistantVoice,
+        filterTooLong: s.filterTooLong,
+        manualShortcut: s.manualShortcut,
+        manualReplacesDraft: s.manualReplacesDraft,
+      }
+    },
+    async patch => {
+      const settings = ctx.get('settings')
+      if (settings === undefined) {
+        const prev = source()
+        source = () => ({ ...prev, ...patch })
+        return source()
+      }
+      const prev = source()
+      const next = { ...prev, ...patch }
+      await settings.update(SETTINGS_NAMESPACE, next)
+      return source()
     },
     generateFn,
     dismissFn,
