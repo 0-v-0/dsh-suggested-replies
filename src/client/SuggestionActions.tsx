@@ -12,7 +12,7 @@
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SuggestedRepliesStateResponse } from '../rpc.ts'
@@ -80,7 +80,7 @@ const CSS_TEXT = `
 }
 .dsh-sr-dropdown {
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   left: 0;
   z-index: 10;
   display: flex;
@@ -93,7 +93,7 @@ const CSS_TEXT = `
   border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-elevated, #ffffff);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
 }
 .dsh-sr-dropdown-header {
   display: flex;
@@ -169,7 +169,21 @@ function saveCollapsed(v: boolean): void {
 export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionActionsProps) {
   const [observed, setObserved] = useState<ObservedState | undefined>()
   const [collapsed, setCollapsed] = useState(loadCollapsed)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
+  // Click outside the dropdown to collapse
+  useEffect(() => {
+    if (collapsed) return
+    const onPointerDown = (event: MouseEvent): void => {
+      const el = wrapRef.current
+      if (el !== null && el !== undefined && !el.contains(event.target as Node)) {
+        setCollapsed(true)
+        saveCollapsed(true)
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [collapsed])
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
@@ -261,7 +275,7 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
   }
 
   return (
-    <div className="dsh-sr-wrap" style={wrapStyle}>
+    <div ref={wrapRef} className="dsh-sr-wrap" style={wrapStyle}>
       <button
         type="button"
         className="dsh-sr-toggle"
