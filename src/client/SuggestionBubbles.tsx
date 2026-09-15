@@ -29,6 +29,7 @@ interface ObservedState {
 }
 
 const STYLE_TAG_ID = 'dsh-suggested-replies-style'
+const COLLAPSE_KEY = 'dsh-suggested-replies-collapsed'
 let styleUsers = 0
 
 const CSS_TEXT = `
@@ -39,48 +40,59 @@ const CSS_TEXT = `
   max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
   margin: 0 auto;
 }
-.dsh-suggested-replies-row {
+.dsh-suggested-replies-header {
   display: flex;
-  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 28px;
+}
+.dsh-suggested-replies-header-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #68707d);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 20px;
+}
+.dsh-suggested-replies-header-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.10));
+}
+.dsh-suggested-replies-chevron {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 160ms ease;
+}
+.dsh-suggested-replies-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+.dsh-suggested-replies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 4px 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-.dsh-suggested-replies-row::-webkit-scrollbar {
-  display: none;
-}
-.dsh-suggested-replies-loading {
-  color: var(--dsw-alias-label-tertiary, #68707d);
-  font-size: 12px;
-  line-height: 20px;
-}
-.dsh-suggested-replies-label {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary, #68707d);
-  font-size: 12px;
-  line-height: 20px;
+  overflow: hidden;
 }
 .dsh-suggested-replies-bubble {
   box-sizing: border-box;
-  flex: none;
-  max-width: min(100%, 320px);
   overflow: hidden;
-  padding: 6px 10px;
+  padding: 7px 12px;
   border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--dsw-specific-tip, rgba(127, 136, 153, 0.12));
   color: var(--dsw-alias-label-primary, #23262d);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-  line-height: 18px;
+  line-height: 20px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 .dsh-suggested-replies-bubble:hover:not(:disabled) {
   border-color: var(--dsw-alias-state-business-primary, #2f6fed);
@@ -91,6 +103,12 @@ const CSS_TEXT = `
   outline-offset: 2px;
 }
 .dsh-suggested-replies-bubble:disabled { cursor: default; opacity: .52; }
+.dsh-suggested-replies-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
 .dsh-suggested-replies-regenerate {
   flex: none;
   display: flex;
@@ -116,9 +134,18 @@ const CSS_TEXT = `
 
 const ROOT_STYLE: CSSProperties = { display: 'contents' }
 
+function loadCollapsed(): boolean {
+  try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
+}
+
+function saveCollapsed(v: boolean): void {
+  try { localStorage.setItem(COLLAPSE_KEY, v ? '1' : '0') } catch { /* ignore */ }
+}
+
 /** Render loading text or ready bubbles directly above the composer card. */
 export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }: SuggestionBubblesProps) {
   const [observed, setObserved] = useState<ObservedState | undefined>()
+  const [collapsed, setCollapsed] = useState(loadCollapsed)
   const phase = useInput(state => state.phase)
   const state = observed !== undefined && observed.sessionId === sessionId
     ? observed.value
@@ -139,32 +166,22 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     void (async () => {
       try {
         const initial = await rpc.call(
-          '/suggested-replies',
-          'state.get',
-          { sessionId },
-          signal,
+          '/suggested-replies', 'state.get', { sessionId }, signal,
         ) as StateResult
         if (signal.aborted) return
-        if (!initial.ok) {
-          clear()
-          return
-        }
+        if (!initial.ok) { clear(); return }
 
         let current = initial.value
         publish(current)
 
         while (!signal.aborted) {
           const watched = await rpc.call(
-            '/suggested-replies',
-            'state.watch',
+            '/suggested-replies', 'state.watch',
             { sessionId, lifecycle: current.lifecycle, revision: current.revision },
             signal,
           ) as StateResult
           if (signal.aborted) return
-          if (!watched.ok) {
-            clear()
-            return
-          }
+          if (!watched.ok) { clear(); return }
           current = watched.value
           publish(current)
         }
@@ -222,14 +239,42 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
 
   const disabled = phase !== 'plain'
   const showBubbles = state.suggestions.length > 0
+  const toggleCollapsed = (): void => {
+    const next = !collapsed
+    setCollapsed(next)
+    saveCollapsed(next)
+  }
 
   return (
     <div style={ROOT_STYLE}>
       <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
-        <div className="dsh-suggested-replies-row" aria-label={t('title')}>
-          <span className="dsh-suggested-replies-label">{t('title')}</span>
-          {showBubbles
-            ? state.suggestions.map((text, index) => (
+        <div className="dsh-suggested-replies-header">
+          <button
+            type="button"
+            className="dsh-suggested-replies-header-btn"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={t('title')}
+          >
+            <span className={`dsh-suggested-replies-chevron${collapsed ? ' dsh-suggested-replies-chevron-collapsed' : ''}`}>▼</span>
+            {t('title')}
+          </button>
+          <div className="dsh-suggested-replies-actions">
+            <button
+              type="button"
+              className="dsh-suggested-replies-regenerate"
+              disabled={disabled}
+              title={t('regenerate')}
+              aria-label={t('regenerate')}
+              onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
+            >
+              ✨
+            </button>
+          </div>
+        </div>
+        {!collapsed && showBubbles && (
+          <div className="dsh-suggested-replies-list">
+            {state.suggestions.map((text, index) => (
               <button
                 key={`${state.turn}-${index}`}
                 type="button"
@@ -240,19 +285,9 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
               >
                 {text}
               </button>
-            ))
-            : null}
-          <button
-            type="button"
-            className="dsh-suggested-replies-regenerate"
-            disabled={disabled}
-            title={t('regenerate')}
-            aria-label={t('regenerate')}
-            onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
-          >
-            ✨
-          </button>
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
