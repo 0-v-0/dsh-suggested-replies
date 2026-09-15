@@ -3,10 +3,16 @@
  * finalized assistant message. Gets `setDraft` from a module-level cache
  * populated by the hidden dock component.
  *
+ * Layout: a compact icon toggle button sits inline in the MessageIconActions
+ * row (28×28, matching other action buttons). When expanded, an absolutely
+ * positioned dropdown drops straight down below the button — it does not
+ * push siblings or affect the row layout. The dropdown scrolls internally
+ * when content exceeds its max-height.
+ *
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */
 
-import { Fragment, useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SuggestedRepliesStateResponse } from '../rpc.ts'
@@ -42,53 +48,90 @@ const COLLAPSE_KEY = 'dsh-suggested-replies-collapsed'
 let styleUsers = 0
 
 const CSS_TEXT = `
-.dsh-sr-actions-root {
+.dsh-sr-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.dsh-sr-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28px + var(--dsh-content-font-delta, 0px));
+  height: calc(28px + var(--dsh-content-font-delta, 0px));
+  padding: 6px;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #68707d);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+.dsh-sr-toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.10));
+  color: var(--dsw-alias-label-secondary, #494e58);
+}
+.dsh-sr-toggle svg {
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
+}
+.dsh-sr-toggle[data-active="true"] {
+  color: var(--dsw-alias-state-business-primary, #2f6fed);
+}
+.dsh-sr-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  position: relative;
-  z-index: 1;
+  min-width: 220px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-elevated, #ffffff);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
-.dsh-sr-header {
+.dsh-sr-dropdown-header {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: none;
 }
-.dsh-sr-header-actions {
+.dsh-sr-dropdown-title {
+  flex: 1;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, #68707d);
+  white-space: nowrap;
+}
+.dsh-sr-regen {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 2px;
-}
-.dsh-sr-header-btn {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  border: none;
-  border-radius: 4px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
+  border-radius: 999px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary, #68707d);
   cursor: pointer;
   font-size: 11px;
-  line-height: 18px;
+  line-height: 1;
 }
-.dsh-sr-header-btn:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.10));
-}
-.dsh-sr-chevron {
-  display: inline-block;
-  font-size: 9px;
-  transition: transform 160ms ease;
-}
-.dsh-sr-chevron-collapsed {
-  transform: rotate(-90deg);
+.dsh-sr-regen:hover {
+  border-color: var(--dsw-alias-state-business-primary, #2f6fed);
+  color: var(--dsw-alias-state-business-primary, #2f6fed);
 }
 .dsh-sr-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 0;
 }
 .dsh-sr-bubble {
   box-sizing: border-box;
@@ -111,29 +154,9 @@ const CSS_TEXT = `
   border-color: var(--dsw-alias-state-business-primary, #2f6fed);
   background: var(--dsw-alias-interactive-bg-hover, rgba(47, 111, 237, 0.12));
 }
-.dsh-sr-regen {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary, #68707d);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-}
-.dsh-sr-regen:hover {
-  border-color: var(--dsw-alias-state-business-primary, #2f6fed);
-  color: var(--dsw-alias-state-business-primary, #2f6fed);
-}
 `
 
-const rootStyle: CSSProperties = { position: 'relative', zIndex: 1 }
+const wrapStyle: CSSProperties = { position: 'relative', display: 'inline-flex', alignItems: 'center' }
 
 function loadCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
@@ -238,51 +261,54 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
   }
 
   return (
-    <div style={rootStyle}>
-      <div className="dsh-sr-actions-root">
-        <div className="dsh-sr-header">
-          <button
-            type="button"
-            className="dsh-sr-header-btn"
-            onClick={toggleCollapsed}
-            aria-expanded={!collapsed}
-            aria-label={t('title')}
-          >
-            <span className={`dsh-sr-chevron${collapsed ? ' dsh-sr-chevron-collapsed' : ''}`}>▼</span>
-            {t('title')}
-          </button>
-        </div>
-        {!collapsed && (
-          <Fragment>
-            <div className="dsh-sr-header-actions">
-              <button
-                type="button"
-                className="dsh-sr-regen"
-                title={t('regenerate')}
-                aria-label={t('regenerate')}
-                onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
-              >
-                ✨
-              </button>
+    <div className="dsh-sr-wrap" style={wrapStyle}>
+      <button
+        type="button"
+        className="dsh-sr-toggle"
+        data-active={!collapsed}
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        title={t('title')}
+        aria-label={t('title')}
+      >
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2v-7z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          <circle cx="5.5" cy="7" r="0.7" fill="currentColor" />
+          <circle cx="8" cy="7" r="0.7" fill="currentColor" />
+          <circle cx="10.5" cy="7" r="0.7" fill="currentColor" />
+        </svg>
+      </button>
+      {!collapsed && (
+        <div className="dsh-sr-dropdown">
+          <div className="dsh-sr-dropdown-header">
+            <span className="dsh-sr-dropdown-title">{t('title')}</span>
+            <button
+              type="button"
+              className="dsh-sr-regen"
+              title={t('regenerate')}
+              aria-label={t('regenerate')}
+              onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
+            >
+              ✨
+            </button>
+          </div>
+          {showBubbles && (
+            <div className="dsh-sr-list">
+              {state.suggestions.map((text, index) => (
+                <button
+                  key={`${state.turn}-${index}`}
+                  type="button"
+                  className="dsh-sr-bubble"
+                  title={t('hint')}
+                  onClick={() => { if (cachedSetDraft !== undefined) cachedSetDraft(text) }}
+                >
+                  {text}
+                </button>
+              ))}
             </div>
-            {showBubbles && (
-              <div className="dsh-sr-list">
-                {state.suggestions.map((text, index) => (
-                  <button
-                    key={`${state.turn}-${index}`}
-                    type="button"
-                    className="dsh-sr-bubble"
-                    title={t('hint')}
-                    onClick={() => { if (cachedSetDraft !== undefined) cachedSetDraft(text) }}
-                  >
-                    {text}
-                  </button>
-                ))}
-              </div>
-            )}
-          </Fragment>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
