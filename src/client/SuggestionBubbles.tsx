@@ -218,33 +218,30 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [rpc, sessionId])
 
-  if (state === undefined) return null
+  if (state === undefined || state.phase === 'generating') return null
 
   const disabled = phase !== 'plain'
-  const isLoading = state.phase === 'generating'
-  const showBubbles = state.phase !== 'generating' && state.suggestions.length > 0
+  const showBubbles = state.suggestions.length > 0
 
   return (
     <div style={ROOT_STYLE}>
       <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
         <div className="dsh-suggested-replies-row" aria-label={t('title')}>
           <span className="dsh-suggested-replies-label">{t('title')}</span>
-          {isLoading
-            ? <span className="dsh-suggested-replies-loading" role="status">{t('loading')}</span>
-            : showBubbles
-              ? state.suggestions.map((text, index) => (
-                <button
-                  key={`${state.turn}-${index}`}
-                  type="button"
-                  className="dsh-suggested-replies-bubble"
-                  disabled={disabled}
-                  title={t('hint')}
-                  onClick={() => inputActions.setDraft(text)}
-                >
-                  {text}
-                </button>
-              ))
-              : null}
+          {showBubbles
+            ? state.suggestions.map((text, index) => (
+              <button
+                key={`${state.turn}-${index}`}
+                type="button"
+                className="dsh-suggested-replies-bubble"
+                disabled={disabled}
+                title={t('hint')}
+                onClick={() => inputActions.setDraft(text)}
+              >
+                {text}
+              </button>
+            ))
+            : null}
           <button
             type="button"
             className="dsh-suggested-replies-regenerate"
