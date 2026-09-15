@@ -59,7 +59,7 @@ function props(rpc: ClientConnectionRpc, sessionId = 'session-1', phase = 'plain
     sessionId,
     useInput: (selector: (state: { phase: string }) => unknown) => selector({ phase }),
     inputActions: { setDraft, submit, addImages: () => true, removeImage: () => undefined, pruneImages: () => undefined },
-    t: (key: string) => ({ title: '下一步建议', hint: '点击填入输入框', loading: '生成中' })[key] ?? key,
+    t: (key: string) => ({ title: '回复建议', hint: '点击填入输入框', loading: '正在生成回复建议...' })[key] ?? key,
   } as unknown as SuggestionBubblesProps
   return { value, setDraft, submit }
 }
@@ -74,6 +74,8 @@ function rpcReturning(initial: SuggestedRepliesStateResponse) {
     _signal?: AbortSignal,
   ) => {
     if (endpoint === 'state.get') return Promise.resolve({ ok: true, value: initial })
+    if (endpoint === 'dock.setCollapsed') return Promise.resolve({ ok: true, value: { ok: true } })
+    if (endpoint === 'suggestions.generate') return Promise.resolve({ ok: true, value: { ok: true } })
     const response = nextWatch
     nextWatch = new Promise(() => {})
     return response
@@ -88,17 +90,15 @@ describe('SuggestionBubbles', () => {
     const { container, getByRole } = render(<SuggestionBubbles {...component.value} />)
 
     // While generating: panel hidden
-    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(3))
     expect(container.innerHTML).toBe('')
-    expect(kit.call).toHaveBeenNthCalledWith(
-      1,
+    expect(kit.call).toHaveBeenCalledWith(
       '/suggested-replies',
       'state.get',
       { sessionId: 'session-a' },
       expect.any(AbortSignal),
     )
-    expect(kit.call).toHaveBeenNthCalledWith(
-      2,
+    expect(kit.call).toHaveBeenCalledWith(
       '/suggested-replies',
       'state.watch',
       { sessionId: 'session-a', lifecycle: { createdAt: 1, cwd: '/work' }, revision: 4 },
@@ -125,7 +125,7 @@ describe('SuggestionBubbles', () => {
     expect(container.innerHTML).toBe('')
     // After cleared state arrives: dock with ✨ button visible (no bubbles)
     await act(async () => initial.resolve({ ok: true, value: cleared(3, 2) }))
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(4))
     expect(getByRole('button', { name: 'regenerate' })).toBeDefined()
   })
 
@@ -153,8 +153,8 @@ describe('SuggestionBubbles', () => {
   it('aborts the active watch on unmount', async () => {
     const kit = rpcReturning(ready(['继续实现'], 6))
     const { unmount } = render(<SuggestionBubbles {...props(kit.rpc).value} />)
-    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(2))
-    const signal = kit.call.mock.calls[1]?.[3]
+    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(3))
+    const signal = kit.call.mock.calls[2]?.[3]
 
     expect(signal?.aborted).toBe(false)
     unmount()
@@ -174,14 +174,16 @@ describe('SuggestionBubbles', () => {
       if (endpoint === 'state.get') {
         return Promise.resolve({ ok: true, value: ready([sessionId], sessionId === 'old' ? 1 : 10) })
       }
+      if (endpoint === 'dock.setCollapsed') return Promise.resolve({ ok: true, value: { ok: true } })
+      if (endpoint === 'suggestions.generate') return Promise.resolve({ ok: true, value: { ok: true } })
       return sessionId === 'old' ? oldWatch.promise : newWatch.promise
     })
     const rpc = { call } as unknown as ClientConnectionRpc
     const first = props(rpc, 'old')
     const { getByRole, queryByRole, rerender } = render(<SuggestionBubbles {...first.value} />)
     expect(await waitFor(() => getByRole('button', { name: 'old' }))).toBeDefined()
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(2))
-    const oldSignal = call.mock.calls[1]?.[3]
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(3))
+    const oldSignal = call.mock.calls[2]?.[3]
 
     rerender(<SuggestionBubbles {...props(rpc, 'new').value} />)
     expect(oldSignal?.aborted).toBe(true)

@@ -13,19 +13,13 @@ import type {
 /** Dedicated channel for this plugin's Web endpoints. */
 export const CHANNEL = '/suggested-replies'
 
-/** Result returned by both settings endpoints. */
-export interface SettingsResponse {
-  /** Whether future completed turns generate candidates. */
-  readonly enabled: boolean
-}
-
 /** Client-facing state returned by `state.get` and `state.watch`. */
 export type SuggestedRepliesStateResponse = SuggestedRepliesStateSnapshot
 
-/** Payload accepted by `settings.set`. */
-export interface SettingsSetPayload {
-  /** Requested enabled state. */
-  readonly enabled: boolean
+/** Payload accepted by `dock.setCollapsed`. */
+export interface DockSetCollapsedPayload {
+  readonly sessionId: string
+  readonly collapsed: boolean
 }
 
 /** Payload accepted by `state.get`. */
@@ -64,9 +58,8 @@ export interface GenerateResult {
 
 /** Client-facing config snapshot returned by `config.get` and `config.set`. */
 export interface ConfigResponse {
-  readonly enabled: boolean
-  readonly reasoningEffort: string
   readonly suggestionCount: number
+  readonly reasoningEffort: string
   readonly redactSecrets: boolean
   readonly stripControls: boolean
   readonly singleLine: boolean
@@ -105,25 +98,22 @@ function fail<T>(message: string): RpcResult<T> {
 export function registerSuggestedRepliesRpc(
   ctx: Context,
   store: SuggestedRepliesStateStore,
-  getEnabled: () => boolean,
-  setEnabled: (enabled: boolean) => Promise<void>,
   getConfig: () => ConfigResponse,
   setConfig: (payload: ConfigSetPayload) => Promise<ConfigResponse>,
   generateFn: (sessionId: string, turn?: number) => Promise<void>,
   dismissFn: (sessionId: string) => Promise<void>,
+  setCollapsedFn: (sessionId: string, collapsed: boolean) => void,
 ): void {
   const connection = ctx.connection as HostConnectionHandle
   connection.rpc.handle(CHANNEL, async (endpoint, payload, signal) => {
     switch (endpoint) {
-      case 'settings.get':
-        return ok<SettingsResponse>({ enabled: getEnabled() })
-      case 'settings.set': {
-        if (!isSettingsSetPayload(payload)) return fail<SettingsResponse>('payload must be { enabled: boolean }')
+      case 'dock.setCollapsed': {
+        if (!isDockSetCollapsedPayload(payload)) return fail<GenerateResult>('payload must be { sessionId: string, collapsed: boolean }')
         try {
-          await setEnabled(payload.enabled)
-          return ok<SettingsResponse>({ enabled: getEnabled() })
+          setCollapsedFn(payload.sessionId, payload.collapsed)
+          return ok<GenerateResult>({ ok: true })
         } catch (error) {
-          return fail<SettingsResponse>(error instanceof Error ? error.message : String(error))
+          return fail<GenerateResult>(error instanceof Error ? error.message : String(error))
         }
       }
       case 'state.get': {
@@ -184,8 +174,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function isSettingsSetPayload(value: unknown): value is SettingsSetPayload {
-  return isRecord(value) && typeof value.enabled === 'boolean'
+function isDockSetCollapsedPayload(value: unknown): value is DockSetCollapsedPayload {
+  return isRecord(value)
+    && typeof value.sessionId === 'string'
+    && value.sessionId.length > 0
+    && typeof value.collapsed === 'boolean'
 }
 
 function isStateGetPayload(value: unknown): value is StateGetPayload {

@@ -28,11 +28,6 @@ const introStyle: CSSProperties = {
 }
 const titleStyle: CSSProperties = { margin: 0, fontSize: 15, lineHeight: 1.4 }
 const descriptionStyle: CSSProperties = { margin: '4px 0 0', fontSize: 12, lineHeight: 1.55, opacity: 0.65 }
-const rowStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  gap: 24, padding: '14px 16px',
-  border: '1px solid rgba(128, 128, 128, 0.22)', borderRadius: 12,
-}
 const noteStyle: CSSProperties = {
   marginTop: 14, padding: '10px 12px', borderRadius: 8,
   background: 'rgba(128, 128, 128, 0.12)', fontSize: 13, lineHeight: 1.6,
@@ -168,21 +163,28 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
         <h2 style={titleStyle}>{t('settings.title')}</h2>
         <p style={descriptionStyle}>{t('settings.description')}</p>
       </header>
-      <div style={rowStyle}>
-        <div>
-          <div style={{ fontSize: 15, lineHeight: 1.4 }}>{t('settings.enabled.label')}</div>
-          <div style={{ marginTop: 2, fontSize: 13, lineHeight: 1.5, opacity: 0.62 }}>{t('settings.enabled.description')}</div>
-        </div>
-        <Toggle
-          on={config.enabled}
-          label={t('settings.enabled.label')}
-          disabled={writing}
-          onToggle={() => void patch({ enabled: !config.enabled })}
-        />
-      </div>
-      {!config.enabled && <div style={noteStyle}>{t('settings.disabled.note')}</div>}
-
       <ConfigGroup title={t('settings.generation.title')}>
+        <div style={toggleRowStyle}>
+          <div>
+            <div style={toggleLabelStyle}>{t('settings.suggestionCount.label')}</div>
+            <div style={toggleDescStyle}>{t('settings.suggestionCount.description')}</div>
+          </div>
+          <input
+            type="number"
+            min={0}
+            max={6}
+            step={1}
+            style={{ ...selectStyle, width: 60, textAlign: 'center' }}
+            disabled={writing}
+            value={config.suggestionCount}
+            onChange={e => {
+              const n = Math.max(0, Math.min(6, Math.floor(Number(e.target.value) || 0)))
+              void patch({ suggestionCount: n })
+            }}
+          />
+        </div>
+        {config.suggestionCount === 0 && <div style={noteStyle}>{t('settings.suggestionCount.disabled')}</div>}
+
         <div style={toggleRowStyle}>
           <div>
             <div style={toggleLabelStyle}>{t('settings.reasoningEffort.label')}</div>
@@ -196,22 +198,6 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
           >
             <option value="off">{t('settings.reasoningEffort.off')}</option>
             <option value="auto">{t('settings.reasoningEffort.auto')}</option>
-          </select>
-        </div>
-        <div style={toggleRowStyle}>
-          <div>
-            <div style={toggleLabelStyle}>{t('settings.suggestionCount.label')}</div>
-            <div style={toggleDescStyle}>{t('settings.suggestionCount.description')}</div>
-          </div>
-          <select
-            style={selectStyle}
-            disabled={writing}
-            value={config.suggestionCount}
-            onChange={e => void patch({ suggestionCount: Number(e.target.value) })}
-          >
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
           </select>
         </div>
       </ConfigGroup>

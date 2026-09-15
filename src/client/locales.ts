@@ -14,9 +14,6 @@ export type SuggestedRepliesKey =
   | 'settings.nav'
   | 'settings.title'
   | 'settings.description'
-  | 'settings.enabled.label'
-  | 'settings.enabled.description'
-  | 'settings.disabled.note'
   | 'settings.generation.title'
   | 'settings.reasoningEffort.label'
   | 'settings.reasoningEffort.description'
@@ -24,6 +21,7 @@ export type SuggestedRepliesKey =
   | 'settings.reasoningEffort.auto'
   | 'settings.suggestionCount.label'
   | 'settings.suggestionCount.description'
+  | 'settings.suggestionCount.disabled'
   | 'settings.sanitize.title'
   | 'settings.redactSecrets.label'
   | 'settings.redactSecrets.description'
@@ -61,16 +59,14 @@ export const en: Record<SuggestedRepliesKey, string> = {
   'settings.nav': 'Reply suggestions',
   'settings.title': 'Reply suggestions',
   'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
-  'settings.enabled.label': 'Enable reply suggestions',
-  'settings.enabled.description': 'Generate candidate next messages after an AI reply. Clicking a candidate only fills the draft; it never sends automatically.',
-  'settings.disabled.note': 'Disabled. Completed turns do not make auxiliary suggestion calls until you enable it again.',
   'settings.generation.title': 'Generation',
   'settings.reasoningEffort.label': 'Reasoning effort',
   'settings.reasoningEffort.description': "Set to 'off' to disable thinking for faster suggestions.",
   'settings.reasoningEffort.off': 'Off (no thinking)',
   'settings.reasoningEffort.auto': 'Auto (model default)',
   'settings.suggestionCount.label': 'Number of suggestions',
-  'settings.suggestionCount.description': 'How many candidate messages to generate per turn.',
+  'settings.suggestionCount.description': 'How many candidate messages to generate per turn. Set to 0 to disable.',
+  'settings.suggestionCount.disabled': 'Disabled (set to 0)',
   'settings.sanitize.title': 'Sanitization',
   'settings.redactSecrets.label': 'Redact secrets',
   'settings.redactSecrets.description': 'Mask API keys and tokens in the transcript before sending to the model.',
@@ -106,16 +102,14 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   'settings.nav': '回复建议',
   'settings.title': '回复建议',
   'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的回复建议。默认沿用当前对话使用的模型。',
-  'settings.enabled.label': '启用回复建议',
-  'settings.enabled.description': '点击建议只会把文字填入输入框，由你确认后发送，不会自动发出消息。',
-  'settings.disabled.note': '已关闭。AI 回复结束后不会再生成回复建议。',
   'settings.generation.title': '生成设置',
   'settings.reasoningEffort.label': '思考强度',
   'settings.reasoningEffort.description': "设为'关闭'可禁用思考以加快建议生成。",
   'settings.reasoningEffort.off': '关闭（不思考）',
   'settings.reasoningEffort.auto': '自动（模型默认）',
   'settings.suggestionCount.label': '建议数量',
-  'settings.suggestionCount.description': '每次生成多少条候选消息。',
+  'settings.suggestionCount.description': '每次生成多少条候选消息，设为 0 则关闭。',
+  'settings.suggestionCount.disabled': '已关闭（数量为 0）',
   'settings.sanitize.title': '净化设置',
   'settings.redactSecrets.label': '掩蔽密钥',
   'settings.redactSecrets.description': '在发送给模型前掩蔽转录中的 API 密钥和令牌。',
