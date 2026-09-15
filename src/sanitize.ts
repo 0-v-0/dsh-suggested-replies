@@ -70,11 +70,11 @@ interface SecretPattern {
  */
 const SECRET_PATTERNS: readonly SecretPattern[] = [
   // AWS access key ids.
-  { pattern: /\bAKIA[0-9A-Z]{16}\b/g, label: '<aws_access_key>' },
+  { pattern: /\bAKIA[0-9A-Z]{16,}\b/g, label: '<aws_access_key>' },
   // OpenAI-style sk- tokens (20+ alphanumeric characters after sk-).
   { pattern: /\bsk-[a-zA-Z0-9]{20,}\b/g, label: '<openai_api_key>' },
   // GitHub fine-grained and classic tokens (gho_, ghs_, ghu_, ghp_).
-  { pattern: /\bgh[opsu]_[a-zA-Z0-9]{36}\b/g, label: '<github_token>' },
+  { pattern: /\bgh[opsu]_[a-zA-Z0-9]{36,}\b/g, label: '<github_token>' },
   // Slack tokens (xoxb-, xoxp-, xoxo-, xoxa-).
   { pattern: /\bxox[bpoa]-[a-zA-Z0-9-]+\b/g, label: '<slack_token>' },
   // Compact JWTs (three dot-separated base64url segments starting with eyJ).
