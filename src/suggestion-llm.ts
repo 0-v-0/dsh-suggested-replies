@@ -163,6 +163,18 @@ function turnHasAssistantText(agent: Agent, turn: number): boolean {
     && event.data.message.content.some(block => block.type === 'text' && block.text.trim() !== ''))
 }
 
+/** Derive the messageId of the last assistant message in a completed turn. */
+export function lastAssistantMessageIdForTurn(agent: Agent, turn: number): string | null {
+  const events = getSessionEvents(agent.session)
+  let messageId: string | null = null
+  for (const event of events) {
+    if (event.type === 'assistant/message' && event.data.turn === turn) {
+      messageId = event.data.message.id
+    }
+  }
+  return messageId
+}
+
 /** Extract the last non-empty assistant text produced inside one owned run interval. */
 export function extractSuggestionText(events: readonly SessionEvent[], firstSeq: number): string | null {
   let started = false
