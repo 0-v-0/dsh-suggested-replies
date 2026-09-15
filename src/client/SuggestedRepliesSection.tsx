@@ -200,6 +200,22 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
             <option value="auto">{t('settings.reasoningEffort.auto')}</option>
           </select>
         </div>
+
+        <div style={toggleRowStyle}>
+          <div>
+            <div style={toggleLabelStyle}>{t('settings.displayMode.label')}</div>
+            <div style={toggleDescStyle}>{t('settings.displayMode.description')}</div>
+          </div>
+          <select
+            style={selectStyle}
+            disabled={writing}
+            value={config.displayMode}
+            onChange={e => void patch({ displayMode: e.target.value as 'all' | 'latest' })}
+          >
+            <option value="latest">{t('settings.displayMode.latest')}</option>
+            <option value="all">{t('settings.displayMode.all')}</option>
+          </select>
+        </div>
       </ConfigGroup>
 
       <ConfigGroup title={t('settings.sanitize.title')}>

@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SuggestedRepliesSection, type SuggestedRepliesSectionInjected } from './SuggestedRepliesSection.tsx'
-import { SuggestionBubbles } from './SuggestionBubbles.tsx'
+import { SuggestionBubbles, type SuggestionBubblesInjected } from './SuggestionBubbles.tsx'
 import { SuggestionActions, type SuggestionActionsInjected } from './SuggestionActions.tsx'
 import { en, NS, zh, type SuggestedRepliesKey } from './locales.ts'
 
@@ -47,8 +47,8 @@ export function apply(ctx: ClientContext): void {
     id: 'suggested-replies',
     order: 15,
     locale: NS,
+    inject: (): SuggestionBubblesInjected => ({ rpc }),
   }, SuggestionBubbles))
-
   // Assistant-actions: renders suggestion bubbles below the latest AI message
   const actionsInjected = (): SuggestionActionsInjected => ({ rpc })
   ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({

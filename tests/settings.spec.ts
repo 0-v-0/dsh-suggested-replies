@@ -48,6 +48,7 @@ const defaultConfig: ConfigResponse = {
   filterTooLong: true,
   manualShortcut: 'Mod+Shift+Space',
   manualReplacesDraft: true,
+  displayMode: 'latest',
 }
 
 function noopGetConfig(): ConfigResponse {
@@ -61,11 +62,12 @@ async function noopSetConfig(): Promise<ConfigResponse> {
 const noopGenerate = vi.fn(async () => undefined)
 const noopDismiss = vi.fn(async () => undefined)
 const noopSetCollapsed = vi.fn()
-
+const noopFork = vi.fn(async () => 'child-session')
+const noopGetDraft = vi.fn(() => null)
 describe('registerSuggestedRepliesRpc', () => {
   it('registers the dedicated trusted channel', () => {
     const { ctx } = makeCtxStub()
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     expect((ctx.connection.rpc.handle as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
       CHANNEL,
       expect.any(Function),
@@ -75,7 +77,7 @@ describe('registerSuggestedRepliesRpc', () => {
 
   it('gets config via config.get', async () => {
     const { ctx, handler } = makeCtxStub()
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     expect(await handler()('config.get', {}, signal)).toEqual({ ok: true, value: defaultConfig })
   })
 
@@ -87,7 +89,7 @@ describe('registerSuggestedRepliesRpc', () => {
       current = { ...current, ...patch }
       return current
     }
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, getConfig, setConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, getConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     const result = await handler()('config.set', { suggestionCount: 5 }, signal)
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value.suggestionCount).toBe(5)
@@ -96,7 +98,7 @@ describe('registerSuggestedRepliesRpc', () => {
   it('handles dock.setCollapsed', async () => {
     const { ctx, handler } = makeCtxStub()
     const setCollapsedFn = vi.fn()
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, setCollapsedFn)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, setCollapsedFn, noopGetDraft)
     const result = await handler()('dock.setCollapsed', { sessionId: 'session-a', collapsed: true }, signal)
     expect(result).toMatchObject({ ok: true, value: { ok: true } })
     expect(setCollapsedFn).toHaveBeenCalledWith('session-a', true)
@@ -105,7 +107,7 @@ describe('registerSuggestedRepliesRpc', () => {
   it('returns writer failures and unknown endpoint errors', async () => {
     const { ctx, handler } = makeCtxStub()
     const setConfig = async (): Promise<ConfigResponse> => { throw new Error('write failed') }
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, setConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     expect(await handler()('config.set', { suggestionCount: 0 }, signal)).toMatchObject({ ok: false, error: { message: 'write failed' } })
     expect(await handler()('other', {}, signal)).toMatchObject({ ok: false, error: { message: 'unknown endpoint: other' } })
   })
@@ -113,7 +115,7 @@ describe('registerSuggestedRepliesRpc', () => {
   it('gets and watches sidecar state with the request signal', async () => {
     const { ctx, handler } = makeCtxStub()
     const store = storeStub()
-    registerSuggestedRepliesRpc(ctx as never, store as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, store as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
 
     expect(await handler()('state.get', { sessionId: 'session-a' }, signal))
       .toEqual({ ok: true, value: state() })
@@ -134,7 +136,7 @@ describe('registerSuggestedRepliesRpc', () => {
     ['state.watch', { sessionId: 's', revision: 1.5 }],
   ])('rejects malformed %s payload %#', async (endpoint, payload) => {
     const { ctx, handler } = makeCtxStub()
-    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopSetCollapsed)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     expect(await handler()(endpoint, payload, signal)).toMatchObject({ ok: false, error: { code: 'internal' } })
   })
 })

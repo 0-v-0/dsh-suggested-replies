@@ -20,6 +20,22 @@ import type { SuggestedRepliesStateResponse } from '../rpc.ts'
 /** Module-level cache for setDraft, populated by the hidden dock component. */
 let cachedSetDraft: ((text: string) => void) | undefined
 
+/** Module-level shared displayMode, kept fresh by the first-mounted instance. */
+let cachedDisplayMode: 'all' | 'latest' = 'latest'
+let displayModeListeners = new Set<() => void>()
+let displayModePolling = false
+
+/** Re-fetch config.displayMode and notify all listeners. */
+async function refreshDisplayMode(rpc: { call: Function }): Promise<void> {
+  try {
+    const result = await rpc.call('/suggested-replies', 'config.get', {}) as { ok: true; value: { displayMode: 'all' | 'latest' } } | { ok: false }
+    if (result.ok && result.value.displayMode !== cachedDisplayMode) {
+      cachedDisplayMode = result.value.displayMode
+      for (const fn of displayModeListeners) fn()
+    }
+  } catch { /* ignore */ }
+}
+
 /** Called by the hidden dock component to publish its inputActions.setDraft. */
 export function publishSetDraft(fn: ((text: string) => void) | undefined): void {
   cachedSetDraft = fn
@@ -111,6 +127,12 @@ const CSS_TEXT = `
   color: var(--dsw-alias-label-tertiary, #68707d);
   white-space: nowrap;
 }
+.dsh-sr-branch-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--dsw-alias-label-tertiary, #68707d);
+}
 .dsh-sr-regen {
   flex: none;
   display: flex;
@@ -174,6 +196,20 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
   const [collapsed, setCollapsed] = useState(loadCollapsed)
   const wrapRef = useRef<HTMLDivElement>(null)
 
+  // Subscribe to shared displayMode (refreshed on state.watch resolution and on toggle)
+  const [, forceUpdate] = useState(0)
+  useEffect(() => {
+    const listener = () => forceUpdate(n => n + 1)
+    displayModeListeners.add(listener)
+    // Initial fetch if not already polling
+    if (!displayModePolling) {
+      displayModePolling = true
+      void refreshDisplayMode(rpc).finally(() => { displayModePolling = false })
+    }
+    return () => { displayModeListeners.delete(listener) }
+  }, [rpc])
+  const displayMode = cachedDisplayMode
+
   // Click outside the dropdown to collapse
   useEffect(() => {
     if (collapsed) return
@@ -219,6 +255,7 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
           if (signal.aborted) return
           if (!watched.ok) { clear(); return }
           current = watched.value
+          void refreshDisplayMode(rpc)
           publish(current)
         }
       } catch {
@@ -267,14 +304,18 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
 
   if (state === undefined || state.phase === 'generating') return null
 
-  // Only render if this is the message the suggestions belong to
-  if (state.messageId !== null && state.messageId !== messageId) return null
+  const isLatest = state.messageId === null || state.messageId === messageId
+
+  // In 'latest' mode: only render on the matching message
+  if (displayMode === 'latest' && !isLatest) return null
+  // In 'all' mode: render on all messages, but only the latest gets direct setDraft
 
   const showBubbles = state.suggestions.length > 0
   const toggleCollapsed = (): void => {
     const next = !collapsed
     setCollapsed(next)
     saveCollapsed(next)
+    if (!next) void refreshDisplayMode(rpc)
   }
 
   return (
@@ -299,6 +340,13 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
         <div className="dsh-sr-dropdown">
           <div className="dsh-sr-dropdown-header">
             <span className="dsh-sr-dropdown-title">{t('title')}</span>
+            {displayMode === 'all' && !isLatest && (
+              <svg className="dsh-sr-branch-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 2v8.5a2.5 2.5 0 0 0 2.5 2.5H13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <circle cx="4" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.3" fill="none" />
+                <circle cx="13" cy="13" r="1.5" stroke="currentColor" strokeWidth="1.3" fill="none" />
+              </svg>
+            )}
             <button
               type="button"
               className="dsh-sr-regen"
@@ -316,8 +364,14 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
                   key={`${state.turn}-${index}`}
                   type="button"
                   className="dsh-sr-bubble"
-                  title={t('hint')}
-                  onClick={() => { if (cachedSetDraft !== undefined) cachedSetDraft(text) }}
+                  title={displayMode === 'all' && !isLatest ? t('branchHint') : t('hint')}
+                  onClick={() => {
+                    if (displayMode === 'all' && !isLatest) {
+                      void rpc.call('/suggested-replies', 'suggestions.fork', { sessionId, messageId, draft: text })
+                      setCollapsed(true)
+                      saveCollapsed(true)
+                    } else if (cachedSetDraft !== undefined) cachedSetDraft(text)
+                  }}
                 >
                   {text}
                 </button>

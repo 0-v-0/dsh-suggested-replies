@@ -66,6 +66,8 @@ function rpcReturning(initial: SuggestedRepliesStateResponse) {
     _signal?: AbortSignal,
   ) => {
     if (endpoint === 'state.get') return Promise.resolve({ ok: true, value: initial })
+    if (endpoint === 'config.get') return Promise.resolve({ ok: true, value: { displayMode: 'latest' } })
+    if (endpoint === 'draft.get') return Promise.resolve({ ok: true, value: { draft: null } })
     if (endpoint === 'dock.setCollapsed') return Promise.resolve({ ok: true, value: { ok: true } })
     if (endpoint === 'suggestions.generate') return Promise.resolve({ ok: true, value: { ok: true } })
     const response = nextWatch

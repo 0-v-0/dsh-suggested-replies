@@ -175,6 +175,17 @@ export function lastAssistantMessageIdForTurn(agent: Agent, turn: number): strin
   return messageId
 }
 
+/** Find the event seq of the assistant message with the given messageId. */
+export function seqForMessageId(agent: Agent, messageId: string): number | null {
+  const events = getSessionEvents(agent.session)
+  for (const event of events) {
+    if (event.type === 'assistant/message' && event.data.message.id === messageId) {
+      return event.seq
+    }
+  }
+  return null
+}
+
 /** Extract the last non-empty assistant text produced inside one owned run interval. */
 export function extractSuggestionText(events: readonly SessionEvent[], firstSeq: number): string | null {
   let started = false

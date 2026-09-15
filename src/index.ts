@@ -18,6 +18,7 @@ import {
   generateSuggestedReplies,
   getSessionEvents,
   lastAssistantMessageIdForTurn,
+  seqForMessageId,
   prepareSuggestionRequest,
   resolveConfiguredSuggestionRoute,
   type PreparedSuggestionRequest,
@@ -150,6 +151,7 @@ export const Config = z.object({
   filterFormatting: z.boolean().default(true).description('Filter residual formatting (newlines, asterisks).'),
   manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger; disabled turns it off.'),
   manualReplacesDraft: z.boolean().default(true).description('Whether manual trigger writes directly to the draft.'),
+  displayMode: z.union([z.const('latest'), z.const('all')]).default('latest').description('Where to show suggestion toggles: latest assistant message only, or all assistant messages.'),
   manualDedupe: z.boolean().default(true).description('Pass current candidates as negative examples when regenerating manually.'),
   maxCycleSkipped: z.number().step(1).min(0).max(50).default(10).description('Maximum retained skipped candidates per cycle for dedup.'),
   maxLocalOutcomes: z.number().step(1).min(0).max(200).default(50).description('Maximum interaction outcome records stored in browser localStorage.'),
@@ -170,6 +172,7 @@ const SettingsSchema = z.object({
   filterTooLong: z.boolean().default(true).description('Filter overly long suggestions.'),
   manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger.'),
   manualReplacesDraft: z.boolean().default(true).description('Manual trigger writes directly to draft.'),
+  displayMode: z.union([z.const('latest'), z.const('all')]).default('latest').description('Where to show suggestion toggles.'),
 }) as unknown as z<SuggestedRepliesSettings>
 
 /** Install durable state, internal Agent generation, cancellation, and Web RPC. */
@@ -179,6 +182,8 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   const internalSessions = new Set<string>()
   const generationTasks = new Set<Promise<void>>()
   const collapsedSessions = new Set<string>()
+  /** Pending drafts for forked sessions: child sessionId → draft text. */
+  const pendingDrafts = new Map<string, string>()
   let source: () => SuggestedRepliesSettings = () => ({
     reasoningEffort: config.reasoningEffort,
     suggestionCount: config.suggestionCount,
@@ -191,6 +196,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     filterTooLong: config.filterTooLong,
     manualShortcut: config.manualShortcut,
     manualReplacesDraft: config.manualReplacesDraft,
+    displayMode: config.displayMode,
   })
   let disposing = false
 
@@ -344,6 +350,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
         filterTooLong: s.filterTooLong,
         manualShortcut: s.manualShortcut,
         manualReplacesDraft: s.manualReplacesDraft,
+        displayMode: s.displayMode,
       }
     },
     async patch => {
@@ -360,12 +367,26 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     },
     generateFn,
     dismissFn,
+    async (sessionId: string, messageId: string, draft: string): Promise<string> => {
+      const agent = ctx.agents.get(SessionId(sessionId))
+      if (agent === undefined) throw new Error(`dsh-suggested-replies: session ${sessionId} not found for fork`)
+      const seq = seqForMessageId(agent, messageId)
+      if (seq === null) throw new Error(`dsh-suggested-replies: messageId ${messageId} not found in session ${sessionId}`)
+      const childSession = await ctx.sessions.fork({ sessionId: SessionId(sessionId), atSeq: seq })
+      pendingDrafts.set(String(childSession), draft)
+      return String(childSession)
+    },
     (sessionId: string, collapsed: boolean): void => {
       if (collapsed) {
         collapsedSessions.add(sessionId)
       } else {
         collapsedSessions.delete(sessionId)
       }
+    },
+    (sessionId: string): string | null => {
+      const draft = pendingDrafts.get(sessionId)
+      if (draft !== undefined) pendingDrafts.delete(sessionId)
+      return draft ?? null
     },
   )
 

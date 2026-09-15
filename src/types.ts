@@ -33,6 +33,8 @@ export interface SuggestedRepliesSettings {
   manualShortcut: string
   /** Manual trigger writes the first suggestion directly to the draft. */
   manualReplacesDraft: boolean
+  /** Where to show suggestion toggles: 'latest' (last assistant msg only) or 'all' (every assistant msg). */
+  displayMode: 'all' | 'latest'
 }
 
 /** Provider/model route used by one auxiliary candidate-generation Agent. */

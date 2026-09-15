@@ -34,7 +34,8 @@ describe('client registration', () => {
       component: SuggestionBubbles,
     })
     const dock = registrations.find(entry => entry.component === SuggestionBubbles)
-    expect(dock?.definition.inject).toBeUndefined()
+    expect(dock?.definition.inject).toBeTypeOf('function')
+    expect((dock!.definition.inject as () => unknown)()).toEqual({ rpc })
 
     // Assistant-actions at conversation.chat.assistant-actions order 20
     expect(injectSlot).toHaveBeenCalledWith('conversation.chat.assistant-actions', expect.any(Function))
