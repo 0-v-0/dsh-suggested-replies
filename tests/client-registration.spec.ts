@@ -33,7 +33,7 @@ describe('client registration', () => {
     })
     const dock = registrations.find(entry => entry.component === SuggestionBubbles)
     expect(dock?.definition.inject).toBeTypeOf('function')
-    expect((dock?.definition.inject as () => unknown)()).toEqual({ rpc })
+    expect((dock!.definition.inject as () => unknown)()).toEqual({ rpc })
     expect(registrations).toContainEqual({
       definition: expect.objectContaining({ name: 'settings.section', id: 'suggested-replies', order: 70 }),
       component: SuggestedRepliesSection,
