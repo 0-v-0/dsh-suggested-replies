@@ -383,7 +383,7 @@ export class SuggestedRepliesStateStore {
 
   private async put(sessionId: SessionId, row: SuggestedRepliesRow): Promise<void> {
     await this.table.put(sessionId, row)
-    for (const resolve of [...this.waiters.get(sessionId) ?? []]) resolve()
+    for (const resolve of this.waiters.get(sessionId) ?? []) resolve()
   }
 
   private enqueue<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T> {
