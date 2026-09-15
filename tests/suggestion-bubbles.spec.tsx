@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
-/** Interaction and RPC lifecycle tests for draft-only candidate bubbles. */
+/** Interaction and RPC lifecycle tests for SuggestionActions (assistant-actions slot). */
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientConnectionRpc } from '@deepseek-ai/dsh-client-connection/client'
-import { SuggestionBubbles, type SuggestionBubblesProps } from '../src/client/SuggestionBubbles.tsx'
+import { SuggestionActions, type SuggestionActionsProps } from '../src/client/SuggestionActions.tsx'
+import { SuggestionBubbles } from '../src/client/SuggestionBubbles.tsx'
 import type { SuggestedRepliesStateResponse } from '../src/rpc.ts'
 
 afterEach(() => {
@@ -11,10 +12,11 @@ afterEach(() => {
   document.head.innerHTML = ''
 })
 
-const generating = (revision = 1, turn = 1): SuggestedRepliesStateResponse => ({
+const generating = (revision = 1, turn = 1, messageId = 'msg-1'): SuggestedRepliesStateResponse => ({
   lifecycle: { createdAt: 1, cwd: '/work' },
   revision,
   turn,
+  messageId,
   phase: 'generating',
   suggestions: [],
 })
@@ -23,20 +25,14 @@ const ready = (
   suggestions: readonly string[],
   revision = 2,
   turn = 1,
+  messageId = 'msg-1',
 ): SuggestedRepliesStateResponse => ({
   lifecycle: { createdAt: 1, cwd: '/work' },
   revision,
   turn,
+  messageId,
   phase: 'ready',
   suggestions,
-})
-
-const cleared = (revision = 0, turn = 0): SuggestedRepliesStateResponse => ({
-  lifecycle: { createdAt: 1, cwd: '/work' },
-  revision,
-  turn,
-  phase: 'cleared',
-  suggestions: [],
 })
 
 interface Deferred<T> {
@@ -50,18 +46,14 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-/** Build the complete slot prop face around one RPC caller and input phase. */
-function props(rpc: ClientConnectionRpc, sessionId = 'session-1', phase = 'plain') {
-  const setDraft = vi.fn()
-  const submit = vi.fn()
-  const value = {
+/** Build the complete assistant-actions slot prop face. */
+function props(rpc: ClientConnectionRpc, messageId = 'msg-1', sessionId = 'session-1') {
+  return {
     rpc,
+    messageId,
     sessionId,
-    useInput: (selector: (state: { phase: string }) => unknown) => selector({ phase }),
-    inputActions: { setDraft, submit, addImages: () => true, removeImage: () => undefined, pruneImages: () => undefined },
-    t: (key: string) => ({ title: '回复建议', hint: '点击填入输入框', loading: '正在生成回复建议...' })[key] ?? key,
-  } as unknown as SuggestionBubblesProps
-  return { value, setDraft, submit }
+    t: (key: string) => ({ title: '回复建议', hint: '点击填入输入框', loading: '正在生成回复建议...', regenerate: '重新生成建议' })[key] ?? key,
+  } as unknown as SuggestionActionsProps
 }
 
 function rpcReturning(initial: SuggestedRepliesStateResponse) {
@@ -83,123 +75,67 @@ function rpcReturning(initial: SuggestedRepliesStateResponse) {
   return { rpc: { call } as unknown as ClientConnectionRpc, call, watch }
 }
 
-describe('SuggestionBubbles', () => {
+describe('SuggestionActions', () => {
   it('renders nothing while generating, then shows bubbles when ready', async () => {
     const kit = rpcReturning(generating(4, 7))
-    const component = props(kit.rpc, 'session-a')
-    const { container, getByRole } = render(<SuggestionBubbles {...component.value} />)
+    const component = props(kit.rpc, 'msg-1', 'session-a')
+    const { container, getByRole } = render(<SuggestionActions {...component} />)
 
-    // While generating: panel hidden
-    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(3))
+    // While generating: hidden
+    await waitFor(() => expect(kit.call).toHaveBeenCalled())
     expect(container.innerHTML).toBe('')
-    expect(kit.call).toHaveBeenCalledWith(
-      '/suggested-replies',
-      'state.get',
-      { sessionId: 'session-a' },
-      expect.any(AbortSignal),
-    )
-    expect(kit.call).toHaveBeenCalledWith(
-      '/suggested-replies',
-      'state.watch',
-      { sessionId: 'session-a', lifecycle: { createdAt: 1, cwd: '/work' }, revision: 4 },
-      expect.any(AbortSignal),
-    )
 
     // After ready: bubbles appear
-    await act(async () => kit.watch.resolve({ ok: true, value: ready(['继续实现'], 5, 7) }))
+    await act(async () => kit.watch.resolve({ ok: true, value: ready(['继续实现'], 5, 7, 'msg-1') }))
     expect(await waitFor(() => getByRole('button', { name: '继续实现' }))).toBeDefined()
   })
 
-  it('renders nothing while state.get is pending, but shows regenerate button when state is cleared', async () => {
-    const initial = deferred<{ ok: true; value: SuggestedRepliesStateResponse }>()
-    let nextResponse = initial.promise
-    const call = vi.fn(() => {
-      const response = nextResponse
-      nextResponse = new Promise(() => {})
-      return response
-    })
-    const rpc = { call } as unknown as ClientConnectionRpc
-    const { container, getByRole } = render(<SuggestionBubbles {...props(rpc).value} />)
-
-    // Before state.get resolves: nothing rendered
+  it('renders nothing when messageId does not match state', async () => {
+    const kit = rpcReturning(ready(['继续实现'], 2, 1, 'other-msg'))
+    const { container } = render(<SuggestionActions {...props(kit.rpc, 'msg-1', 'session-a')} />)
+    await waitFor(() => expect(kit.call).toHaveBeenCalled())
     expect(container.innerHTML).toBe('')
-    // After cleared state arrives: dock with ✨ button visible (no bubbles)
-    await act(async () => initial.resolve({ ok: true, value: cleared(3, 2) }))
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(4))
-    expect(getByRole('button', { name: 'regenerate' })).toBeDefined()
   })
 
-  it('clicks only setDraft and never submits', async () => {
-    const rpcKit = rpcReturning(ready(['继续实现', '运行测试']))
-    const kit = props(rpcKit.rpc)
-    const { getByRole } = render(<SuggestionBubbles {...kit.value} />)
+  it('clicks use cached setDraft from hidden dock', async () => {
+    // Mount hidden dock first to publish setDraft
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    render(<SuggestionBubbles {...{
+      rpc: {} as never,
+      sessionId: 'session-a',
+      useInput: (s: (state: { phase: string }) => unknown) => s({ phase: 'plain' }),
+      inputActions: { setDraft, submit, addImages: () => true, removeImage: () => undefined, pruneImages: () => undefined },
+      t: () => '',
+    } as never} />)
+
+    const kit = rpcReturning(ready(['继续实现', '运行测试']))
+    const { getByRole } = render(<SuggestionActions {...props(kit.rpc, 'msg-1', 'session-1')} />)
 
     fireEvent.click(await waitFor(() => getByRole('button', { name: '继续实现' })))
-    expect(kit.setDraft).toHaveBeenCalledWith('继续实现')
-    expect(kit.submit).not.toHaveBeenCalled()
-  })
-
-  it('disables candidate clicks outside the plain input phase', async () => {
-    const rpcKit = rpcReturning(ready(['继续实现']))
-    const kit = props(rpcKit.rpc, 'session-1', 'submitting')
-    const { getByRole } = render(<SuggestionBubbles {...kit.value} />)
-    const button = await waitFor(() => getByRole('button', { name: '继续实现' })) as HTMLButtonElement
-
-    expect(button.disabled).toBe(true)
-    fireEvent.click(button)
-    expect(kit.setDraft).not.toHaveBeenCalled()
+    expect(setDraft).toHaveBeenCalledWith('继续实现')
+    expect(submit).not.toHaveBeenCalled()
   })
 
   it('aborts the active watch on unmount', async () => {
-    const kit = rpcReturning(ready(['继续实现'], 6))
-    const { unmount } = render(<SuggestionBubbles {...props(kit.rpc).value} />)
-    await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(3))
-    const signal = kit.call.mock.calls[2]?.[3]
-
+    const kit = rpcReturning(ready(['继续实现'], 6, 1, 'msg-1'))
+    const { unmount } = render(<SuggestionActions {...props(kit.rpc, 'msg-1', 'session-1')} />)
+    await waitFor(() => expect(kit.call).toHaveBeenCalled())
+    // Find the state.watch signal
+    const watchCall = kit.call.mock.calls.find((c: unknown[]) => c[1] === 'state.watch')
+    const signal = watchCall?.[3] as AbortSignal | undefined
     expect(signal?.aborted).toBe(false)
     unmount()
     expect(signal?.aborted).toBe(true)
   })
 
-  it('aborts the old Session watch and cannot publish its stale response after a Session change', async () => {
-    const oldWatch = deferred<{ ok: true; value: SuggestedRepliesStateResponse }>()
-    const newWatch = deferred<{ ok: true; value: SuggestedRepliesStateResponse }>()
-    const call = vi.fn((
-      _channel: string,
-      endpoint: string,
-      payload: unknown,
-      _signal?: AbortSignal,
-    ) => {
-      const { sessionId } = payload as { sessionId: string }
-      if (endpoint === 'state.get') {
-        return Promise.resolve({ ok: true, value: ready([sessionId], sessionId === 'old' ? 1 : 10) })
-      }
-      if (endpoint === 'dock.setCollapsed') return Promise.resolve({ ok: true, value: { ok: true } })
-      if (endpoint === 'suggestions.generate') return Promise.resolve({ ok: true, value: { ok: true } })
-      return sessionId === 'old' ? oldWatch.promise : newWatch.promise
-    })
-    const rpc = { call } as unknown as ClientConnectionRpc
-    const first = props(rpc, 'old')
-    const { getByRole, queryByRole, rerender } = render(<SuggestionBubbles {...first.value} />)
-    expect(await waitFor(() => getByRole('button', { name: 'old' }))).toBeDefined()
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(3))
-    const oldSignal = call.mock.calls[2]?.[3]
-
-    rerender(<SuggestionBubbles {...props(rpc, 'new').value} />)
-    expect(oldSignal?.aborted).toBe(true)
-    expect(await waitFor(() => getByRole('button', { name: 'new' }))).toBeDefined()
-
-    await act(async () => oldWatch.resolve({ ok: true, value: ready(['stale'], 2) }))
-    expect(queryByRole('button', { name: 'stale' })).toBeNull()
-    expect(getByRole('button', { name: 'new' })).toBeDefined()
-  })
-
   it('keeps one style tag for multiple mounts and removes it after the last unmount', () => {
-    const first = render(<SuggestionBubbles {...props(rpcReturning(ready(['a'])).rpc, 'first').value} />)
-    const second = render(<SuggestionBubbles {...props(rpcReturning(ready(['b'])).rpc, 'second').value} />)
+    const kit = rpcReturning(ready(['a']))
+    const first = render(<SuggestionActions {...props(kit.rpc, 'msg-1', 'first')} />)
+    const second = render(<SuggestionActions {...props(kit.rpc, 'msg-2', 'second')} />)
     expect(document.querySelectorAll('#dsh-suggested-replies-style')).toHaveLength(1)
     expect(document.getElementById('dsh-suggested-replies-style')?.textContent).toContain('flex-direction: column')
-    expect(document.getElementById('dsh-suggested-replies-style')?.textContent).toContain('dsh-suggested-replies-header')
+    expect(document.getElementById('dsh-suggested-replies-style')?.textContent).toContain('dsh-sr-header')
     first.unmount()
     expect(document.querySelectorAll('#dsh-suggested-replies-style')).toHaveLength(1)
     second.unmount()

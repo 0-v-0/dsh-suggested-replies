@@ -26,7 +26,7 @@ function makeCtxStub(): { ctx: object; handler: () => RpcHandler } {
 const signal = new AbortController().signal
 
 function state(revision = 0): SuggestedRepliesStateResponse {
-  return { lifecycle: { createdAt: 1, cwd: '/work' }, revision, turn: null, phase: 'cleared', suggestions: [] }
+  return { lifecycle: { createdAt: 1, cwd: '/work' }, revision, turn: null, messageId: null, phase: 'cleared', suggestions: [] }
 }
 
 function storeStub() {

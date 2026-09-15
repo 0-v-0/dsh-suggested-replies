@@ -17,6 +17,7 @@ import { SuggestedRepliesStateStore } from './state.ts'
 import {
   generateSuggestedReplies,
   getSessionEvents,
+  lastAssistantMessageIdForTurn,
   prepareSuggestionRequest,
   resolveConfiguredSuggestionRoute,
   type PreparedSuggestionRequest,
@@ -267,6 +268,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       gate.release(lease)
       return
     }
+    const messageId = lastAssistantMessageIdForTurn(agent, turn)
     const task = runGeneration(
       ctx,
       store,
@@ -275,6 +277,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       lease,
       agent,
       turn,
+      messageId,
       request,
       getGenerationConfig(),
     ).catch((error: unknown) => {
@@ -387,13 +390,14 @@ async function runGeneration(
   lease: GenerationLease,
   parent: Agent,
   turn: number,
+  messageId: string | null,
   request: PreparedSuggestionRequest,
   config: SuggestionGenerationConfig,
 ): Promise<void> {
   const internalSessionId = SessionId(`session-${randomUUID()}`)
   internalSessions.add(String(internalSessionId))
   try {
-    if (!await store.setGenerating(parent.session, turn, internalSessionId, () => gate.isCurrent(lease))) return
+    if (!await store.setGenerating(parent.session, turn, messageId, internalSessionId, () => gate.isCurrent(lease))) return
     const suggestions = await generateSuggestedReplies(ctx, parent, internalSessionId, request, config, lease.signal)
     if (suggestions === null) {
       await store.clearGeneration(parent.session, internalSessionId)
@@ -402,6 +406,7 @@ async function runGeneration(
     await store.setReady(
       parent.session,
       turn,
+      messageId,
       internalSessionId,
       suggestions,
       () => gate.isCurrent(lease),

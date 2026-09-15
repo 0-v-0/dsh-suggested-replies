@@ -24,6 +24,7 @@ export const suggestedRepliesRowSchema = z.object({
   session: suggestedRepliesSessionIdentitySchema,
   revision: nonNegativeSafeInteger,
   turn: nonNegativeSafeInteger,
+  messageId: z.string().nullable().default(null),
   phase: z.union([z.literal('generating'), z.literal('ready'), z.literal('cleared')]),
   suggestions: z.array(z.string()),
   generationSessionId: z.string().min(1).optional(),
@@ -70,7 +71,10 @@ export interface SuggestedRepliesStateSnapshot {
   /** Monotonic revision within the current Session lifecycle. */
   readonly revision: number
   /** Completed parent turn, or null before this lifecycle has stored state. */
+  /** Completed parent turn, or null before this lifecycle has stored state. */
   readonly turn: number | null
+  /** MessageId of the last assistant message in the completed turn, or null. */
+  readonly messageId: string | null
   /** Current UI phase. */
   readonly phase: 'generating' | 'ready' | 'cleared'
   /** Ready candidates; empty in every other phase. */
@@ -98,12 +102,13 @@ function rowSnapshot(row: SuggestedRepliesRow): SuggestedRepliesRow {
 function responseOf(header: SessionHeader, row: SuggestedRepliesRow | undefined): SuggestedRepliesStateSnapshot {
   const lifecycle = identityOf(header)
   if (row === undefined) {
-    return Object.freeze({ lifecycle, revision: 0, turn: null, phase: 'cleared', suggestions: Object.freeze([]) })
+    return Object.freeze({ lifecycle, revision: 0, turn: null, messageId: null, phase: 'cleared', suggestions: Object.freeze([]) })
   }
   return Object.freeze({
     lifecycle,
     revision: row.revision,
     turn: row.turn,
+    messageId: row.messageId ?? null,
     phase: row.phase,
     suggestions: Object.freeze([...row.suggestions]),
   })
@@ -241,6 +246,7 @@ export class SuggestedRepliesStateStore {
   async setGenerating(
     session: Session,
     turn: number,
+    messageId: string | null,
     generationSessionId: SessionId,
     isCurrent: CurrentPredicate,
   ): Promise<boolean> {
@@ -252,6 +258,7 @@ export class SuggestedRepliesStateStore {
         session: identityOf(session.header),
         revision: (current?.revision ?? 0) + 1,
         turn,
+        messageId,
         phase: 'generating',
         suggestions: [],
         generationSessionId,
@@ -264,6 +271,7 @@ export class SuggestedRepliesStateStore {
   async setReady(
     session: Session,
     turn: number,
+    messageId: string | null,
     generationSessionId: SessionId,
     suggestions: readonly SuggestedReply[],
     isCurrent: CurrentPredicate,
@@ -278,6 +286,7 @@ export class SuggestedRepliesStateStore {
         session: identityOf(session.header),
         revision: current.revision + 1,
         turn,
+        messageId,
         phase: 'ready',
         suggestions: [...suggestions],
       }))
