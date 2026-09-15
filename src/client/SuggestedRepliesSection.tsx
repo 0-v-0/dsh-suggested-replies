@@ -1,5 +1,6 @@
 /**
- * Settings section for the suggested-replies master switch.
+ * Settings section for the suggested-replies master switch and informational
+ * deployment-config overview.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */
@@ -8,6 +9,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsResponse } from '../rpc.ts'
+import type { SuggestedRepliesKey } from './locales.ts'
 
 /** Session-independent injected connection face. */
 export interface SuggestedRepliesSectionInjected {
@@ -54,6 +56,32 @@ const errorStyle: CSSProperties = {
   background: 'rgba(192, 64, 64, 0.12)',
   fontSize: 13,
 }
+const groupStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 0,
+  border: '1px solid rgba(128, 128, 128, 0.22)',
+  borderRadius: 12,
+  overflow: 'hidden',
+}
+const groupHeaderStyle: CSSProperties = {
+  margin: 0,
+  padding: '10px 16px',
+  fontSize: 13,
+  fontWeight: 600,
+  letterSpacing: '0.02em',
+  background: 'rgba(128, 128, 128, 0.10)',
+  borderBottom: '1px solid rgba(128, 128, 128, 0.22)',
+}
+const infoRowStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  padding: '12px 16px',
+  borderBottom: '1px solid rgba(128, 128, 128, 0.14)',
+}
+const infoLabelStyle: CSSProperties = { fontSize: 14, lineHeight: 1.4 }
+const infoDescStyle: CSSProperties = { fontSize: 12, lineHeight: 1.55, opacity: 0.62 }
 
 /** Accessible switch with host-theme-neutral styling. */
 function Toggle({ on, label, disabled, onToggle }: {
@@ -100,7 +128,37 @@ function Toggle({ on, label, disabled, onToggle }: {
   )
 }
 
-/** Render and persist the master enable switch. */
+/** One read-only informational row: a label plus a muted description. */
+function InfoRow({ labelKey, descKey, t }: {
+  readonly labelKey: SuggestedRepliesKey
+  readonly descKey: SuggestedRepliesKey
+  readonly t: (key: SuggestedRepliesKey) => string
+}) {
+  return (
+    <div style={infoRowStyle}>
+      <div style={infoLabelStyle}>{t(labelKey)}</div>
+      <div style={infoDescStyle}>{t(descKey)}</div>
+    </div>
+  )
+}
+
+/** A titled group of read-only informational rows. */
+function ConfigGroup({ titleKey, items, t }: {
+  readonly titleKey: SuggestedRepliesKey
+  readonly items: ReadonlyArray<readonly [SuggestedRepliesKey, SuggestedRepliesKey]>
+  readonly t: (key: SuggestedRepliesKey) => string
+}) {
+  return (
+    <div style={groupStyle}>
+      <h3 style={groupHeaderStyle}>{t(titleKey)}</h3>
+      {items.map(([labelKey, descKey]) => (
+        <InfoRow key={labelKey} labelKey={labelKey} descKey={descKey} t={t} />
+      ))}
+    </div>
+  )
+}
+
+/** Render, persist the master enable switch, and show deployment-config overview. */
 export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps) {
   const [enabled, setEnabled] = useState<boolean | undefined>()
   const [writing, setWriting] = useState(false)
@@ -159,6 +217,42 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
         <Toggle on={enabled} label={t('settings.enabled.label')} disabled={writing} onToggle={() => void toggle()} />
       </div>
       {!enabled && <div style={noteStyle}>{t('settings.disabled.note')}</div>}
+      <ConfigGroup
+        titleKey="settings.generation.title"
+        t={t}
+        items={[
+          ['settings.reasoningEffort.label', 'settings.reasoningEffort.description'],
+          ['settings.suggestionCount.label', 'settings.suggestionCount.description'],
+        ]}
+      />
+      <ConfigGroup
+        titleKey="settings.sanitize.title"
+        t={t}
+        items={[
+          ['settings.redactSecrets.label', 'settings.redactSecrets.description'],
+          ['settings.stripControls.label', 'settings.stripControls.description'],
+          ['settings.singleLine.label', 'settings.singleLine.description'],
+        ]}
+      />
+      <ConfigGroup
+        titleKey="settings.filter.title"
+        t={t}
+        items={[
+          ['settings.filterMetaText.label', 'settings.filterMetaText.description'],
+          ['settings.filterEvaluative.label', 'settings.filterEvaluative.description'],
+          ['settings.filterAssistantVoice.label', 'settings.filterAssistantVoice.description'],
+          ['settings.filterTooLong.label', 'settings.filterTooLong.description'],
+        ]}
+      />
+      <ConfigGroup
+        titleKey="settings.manual.title"
+        t={t}
+        items={[
+          ['settings.manualShortcut.label', 'settings.manualShortcut.description'],
+          ['settings.manualReplacesDraft.label', 'settings.manualReplacesDraft.description'],
+        ]}
+      />
+      <div style={noteStyle}>{t('settings.config.note')}</div>
     </section>
   )
 }

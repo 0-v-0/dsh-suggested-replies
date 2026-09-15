@@ -5,7 +5,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-storage-domain'
@@ -42,7 +41,7 @@ export const inject = [
 ]
 
 /** User-settings namespace used by the master enable switch. */
-export const SETTINGS_NAMESPACE = settingsNamespace('suggested-replies')
+export const SETTINGS_NAMESPACE = 'suggested-replies'
 
 /** Configurable runtime parameters for candidate generation. */
 export interface Config extends SuggestedRepliesSettings {
@@ -186,18 +185,21 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     await store.clearAll()
   }
 
-  installSettingsSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, { enabled: config.enabled }, {
-    setSource: next => { source = next },
-    onChange: () => {
-      const enabled = source().enabled
-      if (!enabled && enabledBeforeChange) {
-        void clearAll().catch((error: unknown) => {
-          if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
-        })
-      }
-      enabledBeforeChange = enabled
-    },
-  })
+  const settingsService = ctx.get('settings')
+  if (settingsService !== undefined) {
+    settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, { enabled: config.enabled }, {
+      setSource: next => { source = next },
+      onChange: () => {
+        const enabled = source().enabled
+        if (!enabled && enabledBeforeChange) {
+          void clearAll().catch((error: unknown) => {
+            if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
+          })
+        }
+        enabledBeforeChange = enabled
+      },
+    })
+  }
 
   const suggestionRoute = resolveConfiguredSuggestionRoute(config.suggestionProvider, config.suggestionModel)
   const generationConfig: SuggestionGenerationConfig = {
