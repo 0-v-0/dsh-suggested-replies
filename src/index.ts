@@ -22,7 +22,7 @@ import {
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
-import type { SuggestedRepliesSettings } from './types.ts'
+import type { ReasoningEffort, SuggestedRepliesSettings } from './types.ts'
 
 export type * from './types.ts'
 export type { SuggestedRepliesStateSnapshot } from './state.ts'
@@ -60,6 +60,62 @@ export interface Config extends SuggestedRepliesSettings {
   suggestionProvider?: string
   /** Optional explicit model for auxiliary calls; must be paired with `suggestionProvider`. */
   suggestionModel?: string
+  /** Whether to follow the current Session route instead of an explicit provider/model. */
+  followSessionRoute: boolean
+  /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
+  reasoningEffort: ReasoningEffort
+  /** Maximum UTF-8 bytes of the final framed user prompt sent to the auxiliary model. */
+  maxInputBytes: number
+  /** Number of recent completed turns to retain in the transcript for generation. */
+  maxRecentTurns: number
+  /** Character budget for the transcript sent to the auxiliary model. */
+  maxTranscriptChars: number
+  /** Number of conversation turns retained as context (aligns with maxRecentTurns). */
+  maxContextTurns: number
+  /** Byte budget for the retained context turns JSON. */
+  maxContextContextBytes: number
+  /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
+  redactSecrets: boolean
+  /** Strip ANSI/OSC/CSI escape sequences from the transcript. */
+  stripEscapes: boolean
+  /** Strip C0/C1 control chars, bidi override marks, and lone surrogates. */
+  stripControls: boolean
+  /** Strip code fences and surrounding paired quotes from model output. */
+  stripFencesAndQuotes: boolean
+  /** Collapse whitespace and force single-line output. */
+  collapseWhitespace: boolean
+  /** Force candidates to a single line with no embedded newlines. */
+  singleLine: boolean
+  /** Filter meta-text like “no suggestion” or “stay silent”. */
+  filterMetaText: boolean
+  /** Filter error echoes like “api error:” or “error:”. */
+  filterErrorEcho: boolean
+  /** Filter evaluative phrases like “thanks”, “looks good”, “不错”. */
+  filterEvaluative: boolean
+  /** Filter assistant-voice phrases like “Let me…”, “我来…”. */
+  filterAssistantVoice: boolean
+  /** Filter multi-sentence candidates. */
+  filterMultiSentence: boolean
+  /** Filter candidates that are too long (>12 English words or ≥100 bytes). */
+  filterTooLong: boolean
+  /** Allow single-word whitelist entries (yes/ok/继续) and slash commands. */
+  allowSingleCommands: boolean
+  /** Filter residual formatting (newlines, asterisks). */
+  filterFormatting: boolean
+  /** Keyboard shortcut for manual trigger; `disabled` turns it off. */
+  manualShortcut: string
+  /** Whether manual trigger writes directly to the draft. */
+  manualReplacesDraft: boolean
+  /** Pass current candidates as negative examples when regenerating manually. */
+  manualDedupe: boolean
+  /** Maximum retained skipped candidates per cycle for dedup. */
+  maxCycleSkipped: number
+  /** Maximum interaction outcome records stored in browser localStorage. */
+  maxLocalOutcomes: number
+  /** Whether to retain recent performance/cost metrics in host memory. */
+  recordMetrics: boolean
+  /** Exclude non-human events (injected instructions, runtime context) from transcripts. */
+  excludeNonHumanEvents: boolean
 }
 
 /** Config schema with deployment-adjustable generation limits. */
@@ -72,6 +128,34 @@ export const Config = z.object({
   timeoutMs: z.number().step(1).min(1_000).max(30_000).default(15_000).description('Maximum milliseconds an auxiliary model call may run.'),
   suggestionProvider: z.string().required(false).description('Optional explicit provider for auxiliary calls; omitted means inherit the current Session route.'),
   suggestionModel: z.string().required(false).description('Optional explicit model for auxiliary calls; must be paired with suggestionProvider.'),
+  followSessionRoute: z.boolean().default(true).description('Follow the current Session route instead of an explicit provider/model.'),
+  reasoningEffort: z.union([z.const('off'), z.const('auto')]).default('off').description('Reasoning effort override: off disables thinking, auto follows model default.'),
+  maxInputBytes: z.number().step(1).min(256).max(32_768).default(4096).description('Maximum UTF-8 bytes of the final framed user prompt.'),
+  maxRecentTurns: z.number().step(1).min(1).max(4).default(1).description('Number of recent completed turns retained in the transcript.'),
+  maxTranscriptChars: z.number().step(1).min(1_000).max(60_000).default(12_000).description('Character budget for the transcript sent to the auxiliary model.'),
+  maxContextTurns: z.number().step(1).min(1).max(10).default(3).description('Number of conversation turns retained as context.'),
+  maxContextContextBytes: z.number().step(1).min(1_024).max(65_536).default(16_384).description('Byte budget for retained context turns JSON.'),
+  redactSecrets: z.boolean().default(true).description('Mask API keys and bearer tokens in transcripts before sending to the model.'),
+  stripEscapes: z.boolean().default(true).description('Strip ANSI/OSC/CSI escape sequences from transcripts.'),
+  stripControls: z.boolean().default(true).description('Strip C0/C1 control chars, bidi override marks, and lone surrogates.'),
+  stripFencesAndQuotes: z.boolean().default(true).description('Strip code fences and surrounding paired quotes from model output.'),
+  collapseWhitespace: z.boolean().default(true).description('Collapse whitespace and force single-line output.'),
+  singleLine: z.boolean().default(true).description('Force candidates to a single line with no embedded newlines.'),
+  filterMetaText: z.boolean().default(true).description('Filter meta-text like “no suggestion” or “stay silent”.'),
+  filterErrorEcho: z.boolean().default(true).description('Filter error echoes like “api error:” or “error:”.'),
+  filterEvaluative: z.boolean().default(true).description('Filter evaluative phrases like “thanks”, “looks good”.'),
+  filterAssistantVoice: z.boolean().default(true).description('Filter assistant-voice phrases like “Let me…”.'),
+  filterMultiSentence: z.boolean().default(true).description('Filter multi-sentence candidates.'),
+  filterTooLong: z.boolean().default(true).description('Filter candidates that are too long (>12 English words or ≥100 bytes).'),
+  allowSingleCommands: z.boolean().default(true).description('Allow single-word whitelist entries and slash commands.'),
+  filterFormatting: z.boolean().default(true).description('Filter residual formatting (newlines, asterisks).'),
+  manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger; disabled turns it off.'),
+  manualReplacesDraft: z.boolean().default(true).description('Whether manual trigger writes directly to the draft.'),
+  manualDedupe: z.boolean().default(true).description('Pass current candidates as negative examples when regenerating manually.'),
+  maxCycleSkipped: z.number().step(1).min(0).max(50).default(10).description('Maximum retained skipped candidates per cycle for dedup.'),
+  maxLocalOutcomes: z.number().step(1).min(0).max(200).default(50).description('Maximum interaction outcome records stored in browser localStorage.'),
+  recordMetrics: z.boolean().default(true).description('Retain recent performance/cost metrics in host memory.'),
+  excludeNonHumanEvents: z.boolean().default(true).description('Exclude non-human events from transcripts.'),
 }) as unknown as z<Config>
 
 /** Settings schema intentionally exposes only the user-facing master switch. */

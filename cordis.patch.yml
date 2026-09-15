@@ -16,3 +16,36 @@
         # session provider/model.
         # suggestionProvider: deepseek-official
         # suggestionModel: deepseek-v4-flash
+        # Generation and routing
+        followSessionRoute: true
+        reasoningEffort: 'off'
+        maxInputBytes: 4096
+        maxRecentTurns: 1
+        maxTranscriptChars: 12000
+        maxContextTurns: 3
+        maxContextContextBytes: 16384
+        # Sanitization
+        redactSecrets: true
+        stripEscapes: true
+        stripControls: true
+        stripFencesAndQuotes: true
+        collapseWhitespace: true
+        singleLine: true
+        # Semantic filtering
+        filterMetaText: true
+        filterErrorEcho: true
+        filterEvaluative: true
+        filterAssistantVoice: true
+        filterMultiSentence: true
+        filterTooLong: true
+        allowSingleCommands: true
+        filterFormatting: true
+        # Manual generation
+        manualShortcut: 'Mod+Shift+Space'
+        manualReplacesDraft: true
+        manualDedupe: true
+        maxCycleSkipped: 10
+        # Privacy and metrics
+        maxLocalOutcomes: 50
+        recordMetrics: true
+        excludeNonHumanEvents: true
