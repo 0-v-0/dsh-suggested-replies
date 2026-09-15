@@ -6,7 +6,7 @@
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useState, type CSSProperties } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SuggestedRepliesStateResponse } from '../rpc.ts'
@@ -46,11 +46,19 @@ const CSS_TEXT = `
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
+  z-index: 1;
 }
 .dsh-sr-header {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.dsh-sr-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
 }
 .dsh-sr-header-btn {
   display: flex;
@@ -125,7 +133,7 @@ const CSS_TEXT = `
 }
 `
 
-const rootStyle: CSSProperties = { display: 'contents' }
+const rootStyle: CSSProperties = { position: 'relative', zIndex: 1 }
 
 function loadCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
@@ -243,30 +251,36 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
             <span className={`dsh-sr-chevron${collapsed ? ' dsh-sr-chevron-collapsed' : ''}`}>▼</span>
             {t('title')}
           </button>
-          <button
-            type="button"
-            className="dsh-sr-regen"
-            title={t('regenerate')}
-            aria-label={t('regenerate')}
-            onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
-          >
-            ✨
-          </button>
         </div>
-        {!collapsed && showBubbles && (
-          <div className="dsh-sr-list">
-            {state.suggestions.map((text, index) => (
+        {!collapsed && (
+          <Fragment>
+            <div className="dsh-sr-header-actions">
               <button
-                key={`${state.turn}-${index}`}
                 type="button"
-                className="dsh-sr-bubble"
-                title={t('hint')}
-                onClick={() => { if (cachedSetDraft !== undefined) cachedSetDraft(text) }}
+                className="dsh-sr-regen"
+                title={t('regenerate')}
+                aria-label={t('regenerate')}
+                onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
               >
-                {text}
+                ✨
               </button>
-            ))}
-          </div>
+            </div>
+            {showBubbles && (
+              <div className="dsh-sr-list">
+                {state.suggestions.map((text, index) => (
+                  <button
+                    key={`${state.turn}-${index}`}
+                    type="button"
+                    className="dsh-sr-bubble"
+                    title={t('hint')}
+                    onClick={() => { if (cachedSetDraft !== undefined) cachedSetDraft(text) }}
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            )}
+          </Fragment>
         )}
       </div>
     </div>
