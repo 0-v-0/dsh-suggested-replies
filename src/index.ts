@@ -16,12 +16,13 @@ import { registerSuggestedRepliesRpc } from './rpc.ts'
 import { SuggestedRepliesStateStore } from './state.ts'
 import {
   generateSuggestedReplies,
+  getSessionEvents,
   prepareSuggestionRequest,
   resolveConfiguredSuggestionRoute,
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
-import type { ReasoningEffort, SuggestedRepliesSettings } from './types.ts'
+import type { ReasoningEffort, SuggestedRepliesSettings, SuggestionOrigin } from './types.ts'
 
 export type * from './types.ts'
 export type { SuggestedRepliesStateSnapshot } from './state.ts'
@@ -34,7 +35,6 @@ export const inject = [
   'connection',
   'sessionPersistence',
   'sessions',
-  'storageDomain',
   'systemPrompt',
   'tools',
   'workspaceRegistry',
@@ -207,24 +207,39 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     contextMessageCount: config.contextMessageCount,
     maxSuggestionChars: config.maxSuggestionChars,
     maxTokens: config.maxTokens,
+    maxInputBytes: config.maxInputBytes,
+    maxRecentTurns: config.maxRecentTurns,
+    maxTranscriptChars: config.maxTranscriptChars,
+    maxContextTurns: config.maxContextTurns,
+    maxContextContextBytes: config.maxContextContextBytes,
+    reasoningEffort: config.reasoningEffort,
+    redactSecrets: config.redactSecrets,
+    stripEscapes: config.stripEscapes,
+    stripControls: config.stripControls,
+    stripFencesAndQuotes: config.stripFencesAndQuotes,
+    collapseWhitespace: config.collapseWhitespace,
+    singleLine: config.singleLine,
+    filterMetaText: config.filterMetaText,
+    filterErrorEcho: config.filterErrorEcho,
+    filterEvaluative: config.filterEvaluative,
+    filterAssistantVoice: config.filterAssistantVoice,
+    filterMultiSentence: config.filterMultiSentence,
+    filterTooLong: config.filterTooLong,
+    allowSingleCommands: config.allowSingleCommands,
+    filterFormatting: config.filterFormatting,
+    manualReplacesDraft: config.manualReplacesDraft,
+    manualDedupe: config.manualDedupe,
+    maxCycleSkipped: config.maxCycleSkipped,
+    excludeNonHumanEvents: config.excludeNonHumanEvents,
     ...suggestionRoute === undefined ? {} : { suggestionRoute },
   }
 
-  ctx.on('session/event', (session, event) => {
-    if (internalSessions.has(String(session.id))) return
-    if (event.type === 'turn/start') {
-      const agent = ctx.agents.get(session.id)
-      if (agent?.session === session) cancelSession(agent, true)
-      return
-    }
-    if (event.type !== 'turn/end') return
-    if (event.data.reason.kind !== 'completed' && event.data.reason.kind !== 'max-tokens') return
+  const startGenerationForSession = (agent: Agent, turn: number, _origin: SuggestionOrigin): void => {
     if (!source().enabled) return
-    const agent = ctx.agents.get(session.id)
-    if (agent?.session !== session || agent.inbox.hasPending) return
+    if (agent.inbox.hasPending) return
 
     const lease = gate.start(String(agent.id), config.timeoutMs)
-    const request = prepareSuggestionRequest(agent, generationConfig, event.data.turn, lease.signal)
+    const request = prepareSuggestionRequest(agent, generationConfig, turn, lease.signal)
     if (request === null) {
       gate.release(lease)
       return
@@ -236,7 +251,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       gate,
       lease,
       agent,
-      event.data.turn,
+      turn,
       request,
       generationConfig,
     ).catch((error: unknown) => {
@@ -246,6 +261,20 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     })
     generationTasks.add(task)
     void task.finally(() => { generationTasks.delete(task) })
+  }
+
+  ctx.on('session/event', (session, event) => {
+    if (internalSessions.has(String(session.id))) return
+    if (event.type === 'turn/start') {
+      const agent = ctx.agents.get(session.id)
+      if (agent?.session === session) cancelSession(agent, true)
+      return
+    }
+    if (event.type !== 'turn/end') return
+    if (event.data.reason.kind !== 'completed' && event.data.reason.kind !== 'max-tokens') return
+    const agent = ctx.agents.get(session.id)
+    if (agent?.session !== session) return
+    startGenerationForSession(agent, event.data.turn, 'auto')
   })
 
   ctx.on('agent/inbox/inserted', ({ agent }) => {
@@ -257,6 +286,20 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     if (internalSessions.has(String(agent.id))) return
     gate.cancel(String(agent.id))
   })
+
+  const generateFn = async (sessionId: string, turn?: number): Promise<void> => {
+    const agent = ctx.agents.get(SessionId(sessionId))
+    if (agent === undefined) return
+    const resolvedTurn = turn ?? lastCompletedTurn(agent)
+    if (resolvedTurn === null) return
+    startGenerationForSession(agent, resolvedTurn, 'manual')
+  }
+
+  const dismissFn = async (sessionId: string): Promise<void> => {
+    const agent = ctx.agents.get(SessionId(sessionId))
+    if (agent === undefined) return
+    cancelSession(agent, true)
+  }
 
   registerSuggestedRepliesRpc(
     ctx,
@@ -274,6 +317,8 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       if (!enabled) await clearAll()
       enabledBeforeChange = source().enabled
     },
+    generateFn,
+    dismissFn,
   )
 
   return async () => {
@@ -322,4 +367,18 @@ async function runGeneration(
     internalSessions.delete(String(internalSessionId))
     gate.release(lease)
   }
+}
+
+/** Find the last turn that completed normally or hit the max-tokens limit. */
+function lastCompletedTurn(agent: Agent): number | null {
+  const events = getSessionEvents(agent.session)
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event === undefined) continue
+    if (event.type === 'turn/end'
+      && (event.data.reason.kind === 'completed' || event.data.reason.kind === 'max-tokens')) {
+      return event.data.turn
+    }
+  }
+  return null
 }

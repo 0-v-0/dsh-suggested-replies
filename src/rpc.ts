@@ -42,6 +42,26 @@ export interface StateWatchPayload extends StateGetPayload {
   readonly revision: number
 }
 
+/** Payload accepted by `suggestions.generate`. */
+export interface GeneratePayload {
+  /** Parent Session whose last completed turn should generate candidates. */
+  readonly sessionId: string
+  /** Optional explicit turn number; omitted means use the last completed turn. */
+  readonly turn?: number
+}
+
+/** Payload accepted by `suggestions.dismiss`. */
+export interface DismissPayload {
+  /** Parent Session whose active generation should be dismissed. */
+  readonly sessionId: string
+}
+
+/** Generic success response returned by manual-trigger endpoints. */
+export interface GenerateResult {
+  /** Acknowledgement that the action was accepted. */
+  readonly ok: true
+}
+
 function ok<T>(value: T): RpcResult<T> {
   return { ok: true, value }
 }
@@ -56,6 +76,8 @@ export function registerSuggestedRepliesRpc(
   store: SuggestedRepliesStateStore,
   getEnabled: () => boolean,
   setEnabled: (enabled: boolean) => Promise<void>,
+  generateFn: (sessionId: string, turn?: number) => Promise<void>,
+  dismissFn: (sessionId: string) => Promise<void>,
 ): void {
   const connection = ctx.connection as HostConnectionHandle
   connection.rpc.handle(CHANNEL, async (endpoint, payload, signal) => {
@@ -88,6 +110,24 @@ export function registerSuggestedRepliesRpc(
         } catch (error) {
           if (signal.aborted) throw error
           return fail<SuggestedRepliesStateResponse>(error instanceof Error ? error.message : String(error))
+        }
+      }
+      case 'suggestions.generate': {
+        if (!isGeneratePayload(payload)) return fail<GenerateResult>('payload must be { sessionId: string, turn?: number }')
+        try {
+          await generateFn(payload.sessionId, payload.turn)
+          return ok<GenerateResult>({ ok: true })
+        } catch (error) {
+          return fail<GenerateResult>(error instanceof Error ? error.message : String(error))
+        }
+      }
+      case 'suggestions.dismiss': {
+        if (!isDismissPayload(payload)) return fail<GenerateResult>('payload must be { sessionId: string }')
+        try {
+          await dismissFn(payload.sessionId)
+          return ok<GenerateResult>({ ok: true })
+        } catch (error) {
+          return fail<GenerateResult>(error instanceof Error ? error.message : String(error))
         }
       }
       default:
@@ -124,4 +164,13 @@ function isSessionIdentity(value: unknown): value is SuggestedRepliesSessionIden
     || !Number.isSafeInteger(value.createdAt)
     || value.createdAt < 0) return false
   return value.cwd === undefined || typeof value.cwd === 'string'
+}
+
+function isGeneratePayload(value: unknown): value is GeneratePayload {
+  if (!isRecord(value) || typeof value.sessionId !== 'string' || value.sessionId.length === 0) return false
+  return value.turn === undefined || (typeof value.turn === 'number' && Number.isSafeInteger(value.turn) && value.turn >= 0)
+}
+
+function isDismissPayload(value: unknown): value is DismissPayload {
+  return isRecord(value) && typeof value.sessionId === 'string' && value.sessionId.length > 0
 }

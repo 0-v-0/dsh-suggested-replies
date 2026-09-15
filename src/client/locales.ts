@@ -9,6 +9,8 @@ export type SuggestedRepliesKey =
   | 'title'
   | 'hint'
   | 'loading'
+  | 'regenerate'
+  | 'dismiss'
   | 'settings.nav'
   | 'settings.title'
   | 'settings.description'
@@ -55,6 +57,8 @@ export const en: Record<SuggestedRepliesKey, string> = {
   title: 'Suggested next messages',
   hint: 'Click to fill the message box',
   loading: 'Preparing next-message suggestions...',
+  regenerate: 'Regenerate suggestions',
+  dismiss: 'Dismiss suggestions',
   'settings.nav': 'Suggested replies',
   'settings.title': 'Suggested replies',
   'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
@@ -99,6 +103,8 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   title: '下一步建议',
   hint: '点击填入输入框',
   loading: '正在生成下一步建议...',
+  regenerate: '重新生成建议',
+  dismiss: '关闭建议',
   'settings.nav': '下一步建议',
   'settings.title': '下一步建议',
   'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的下一步消息。默认沿用当前对话使用的模型。',

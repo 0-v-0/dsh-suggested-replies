@@ -136,13 +136,44 @@ export class SuggestedRepliesStateStore {
   private closing = false
   private closeTask: Promise<void> | undefined
 
-  /** Open the plugin domain through the official storage-domain facility. */
+  /**
+   * Open the plugin domain through the official storage-domain facility.
+   * Falls back to an in-memory no-op store when the storage backend is
+   * unavailable, so the plugin never crashes the host profile.
+   */
   static async open(ctx: Context): Promise<SuggestedRepliesStateStore> {
-    const domain = await ctx.storageDomain.open(suggestedRepliesStateDomainSpec)
-    const store = new SuggestedRepliesStateStore(ctx, domain.table('sessions'), domain)
-    ctx.effect(() => () => store.close(), 'dsh-suggested-replies: sidecar lifecycle')
-    await store.clearInterruptedGenerations()
-    return store
+    try {
+      const storageDomain = ctx.get('storageDomain')
+      if (storageDomain === undefined) {
+        ctx.logger.warn('dsh-suggested-replies: storageDomain service not available, running in-memory only')
+        const noopStore = SuggestedRepliesStateStore.inMemory(ctx)
+        ctx.effect(() => () => noopStore.close(), 'dsh-suggested-replies: sidecar lifecycle (in-memory)')
+        return noopStore
+      }
+      const domain = await storageDomain.open(suggestedRepliesStateDomainSpec)
+      const store = new SuggestedRepliesStateStore(ctx, domain.table('sessions'), domain)
+      ctx.effect(() => () => store.close(), 'dsh-suggested-replies: sidecar lifecycle')
+      await store.clearInterruptedGenerations()
+      return store
+    } catch (error) {
+      ctx.logger.warn(`dsh-suggested-replies: storage domain unavailable, running in-memory only: ${String(error)}`)
+      const noopStore = SuggestedRepliesStateStore.inMemory(ctx)
+      ctx.effect(() => () => noopStore.close(), 'dsh-suggested-replies: sidecar lifecycle (in-memory)')
+      return noopStore
+    }
+  }
+
+  /** Build an in-memory store with no persistence, used when storage is unavailable. */
+  static inMemory(ctx: Context): SuggestedRepliesStateStore {
+    const rows = new Map<SessionId, SuggestedRepliesRow>()
+    const fakeDomain = { close: async () => undefined }
+    const fakeTable: KvTable<SessionId, SuggestedRepliesRow> = {
+      get: (id: SessionId) => rows.get(id),
+      put: async (id: SessionId, row: SuggestedRepliesRow) => { rows.set(id, row) },
+      delete: async (id: SessionId) => { rows.delete(id) },
+      entries: () => rows.entries(),
+    }
+    return new SuggestedRepliesStateStore(ctx, fakeTable, fakeDomain)
   }
 
   /** Construct around one owned table; public for focused storage tests. */

@@ -91,6 +91,27 @@ const CSS_TEXT = `
   outline-offset: 2px;
 }
 .dsh-suggested-replies-bubble:disabled { cursor: default; opacity: .52; }
+.dsh-suggested-replies-regenerate {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l1, #d8dce2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #68707d);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.dsh-suggested-replies-regenerate:hover:not(:disabled) {
+  border-color: var(--dsw-alias-state-business-primary, #2f6fed);
+  color: var(--dsw-alias-state-business-primary, #2f6fed);
+}
+.dsh-suggested-replies-regenerate:disabled { cursor: default; opacity: .52; }
 `
 
 const ROOT_STYLE: CSSProperties = { display: 'contents' }
@@ -170,6 +191,33 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     }
   }, [])
 
+  const hasVisibleSuggestions = state !== undefined
+    && state.phase !== 'cleared'
+    && state.phase !== 'generating'
+    && state.suggestions.length > 0
+
+  useEffect(() => {
+    if (!hasVisibleSuggestions) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      void rpc.call('/suggested-replies', 'suggestions.dismiss', { sessionId })
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [rpc, sessionId, hasVisibleSuggestions])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.ctrlKey || event.metaKey
+      if (!mod || !event.shiftKey || event.code !== 'Space') return
+      if (event.isComposing) return
+      event.preventDefault()
+      void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [rpc, sessionId])
+
   if (state === undefined || state.phase === 'cleared') return null
 
   if (state.phase === 'generating') {
@@ -202,6 +250,16 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
               {text}
             </button>
           ))}
+          <button
+            type="button"
+            className="dsh-suggested-replies-regenerate"
+            disabled={disabled}
+            title={t('regenerate')}
+            aria-label={t('regenerate')}
+            onClick={() => void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })}
+          >
+            ✨
+          </button>
         </div>
       </div>
     </div>
