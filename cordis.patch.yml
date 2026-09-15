@@ -43,6 +43,7 @@
         # Manual generation
         manualShortcut: 'Mod+Shift+Space'
         manualReplacesDraft: true
+        displayMode: 'latest'
         manualDedupe: true
         maxCycleSkipped: 10
         # Privacy and metrics

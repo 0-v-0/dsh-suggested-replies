@@ -9,12 +9,17 @@ export type SuggestedRepliesKey =
   | 'title'
   | 'hint'
   | 'loading'
+  | 'branchHint'
   | 'regenerate'
   | 'dismiss'
   | 'settings.nav'
   | 'settings.title'
   | 'settings.description'
   | 'settings.generation.title'
+  | 'settings.displayMode.label'
+  | 'settings.displayMode.description'
+  | 'settings.displayMode.latest'
+  | 'settings.displayMode.all'
   | 'settings.reasoningEffort.label'
   | 'settings.reasoningEffort.description'
   | 'settings.reasoningEffort.off'
@@ -54,12 +59,17 @@ export const en: Record<SuggestedRepliesKey, string> = {
   title: 'Reply suggestions',
   hint: 'Click to fill the message box',
   loading: 'Preparing reply suggestions...',
+  branchHint: 'Click to fork the conversation and fill the message box',
   regenerate: 'Regenerate suggestions',
   dismiss: 'Dismiss suggestions',
   'settings.nav': 'Reply suggestions',
   'settings.title': 'Reply suggestions',
   'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
   'settings.generation.title': 'Generation',
+  'settings.displayMode.label': 'Display mode',
+  'settings.displayMode.description': 'Show suggestion toggles on the latest reply only, or on all replies.',
+  'settings.displayMode.latest': 'Latest reply only',
+  'settings.displayMode.all': 'All replies',
   'settings.reasoningEffort.label': 'Reasoning effort',
   'settings.reasoningEffort.description': "Set to 'off' to disable thinking for faster suggestions.",
   'settings.reasoningEffort.off': 'Off (no thinking)',
@@ -97,12 +107,17 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   title: '回复建议',
   hint: '点击填入输入框',
   loading: '正在生成回复建议...',
+  branchHint: '点击创建会话分支并填入输入框',
   regenerate: '重新生成建议',
   dismiss: '关闭建议',
   'settings.nav': '回复建议',
   'settings.title': '回复建议',
   'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的回复建议。默认沿用当前对话使用的模型。',
   'settings.generation.title': '生成设置',
+  'settings.displayMode.label': '显示方式',
+  'settings.displayMode.description': '仅在最后一轮回复显示建议按钮，或在所有回复上显示。',
+  'settings.displayMode.latest': '仅最后一轮',
+  'settings.displayMode.all': '全部显示',
   'settings.reasoningEffort.label': '思考强度',
   'settings.reasoningEffort.description': "设为'关闭'可禁用思考以加快建议生成。",
   'settings.reasoningEffort.off': '关闭（不思考）',

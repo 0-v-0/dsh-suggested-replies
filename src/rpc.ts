@@ -69,7 +69,35 @@ export interface ConfigResponse {
   readonly filterTooLong: boolean
   readonly manualShortcut: string
   readonly manualReplacesDraft: boolean
+  readonly displayMode: 'all' | 'latest'
 }
+
+/** Payload accepted by `draft.get`. */
+export interface DraftGetPayload {
+  readonly sessionId: string
+}
+
+/** Result returned by `draft.get`. */
+export interface DraftGetResult {
+  readonly draft: string | null
+}
+
+/** Payload accepted by `suggestions.fork`. */
+export interface ForkPayload {
+  /** Parent Session to fork from. */
+  readonly sessionId: string
+  /** MessageId of the assistant message to fork at. */
+  readonly messageId: string
+  /** Draft text to set in the forked session. */
+  readonly draft: string
+}
+
+/** Result returned by `suggestions.fork`. */
+export interface ForkResult {
+  readonly ok: true
+  readonly sessionId: string
+}
+
 
 /** Payload accepted by `config.set`. */
 export interface ConfigSetPayload {
@@ -84,6 +112,7 @@ export interface ConfigSetPayload {
   readonly filterTooLong?: boolean
   readonly manualShortcut?: string
   readonly manualReplacesDraft?: boolean
+  readonly displayMode?: 'all' | 'latest'
 }
 
 function ok<T>(value: T): RpcResult<T> {
@@ -102,7 +131,9 @@ export function registerSuggestedRepliesRpc(
   setConfig: (payload: ConfigSetPayload) => Promise<ConfigResponse>,
   generateFn: (sessionId: string, turn?: number) => Promise<void>,
   dismissFn: (sessionId: string) => Promise<void>,
+  forkFn: (sessionId: string, messageId: string, draft: string) => Promise<string>,
   setCollapsedFn: (sessionId: string, collapsed: boolean) => void,
+  getDraftFn: (sessionId: string) => string | null,
 ): void {
   const connection = ctx.connection as HostConnectionHandle
   connection.rpc.handle(CHANNEL, async (endpoint, payload, signal) => {
@@ -152,6 +183,19 @@ export function registerSuggestedRepliesRpc(
         } catch (error) {
           return fail<GenerateResult>(error instanceof Error ? error.message : String(error))
         }
+      }
+      case 'suggestions.fork': {
+        if (!isForkPayload(payload)) return fail<ForkResult>('payload must be { sessionId: string, messageId: string, draft: string }')
+        try {
+          const childId = await forkFn(payload.sessionId, payload.messageId, payload.draft)
+          return ok<ForkResult>({ ok: true, sessionId: childId })
+        } catch (error) {
+          return fail<ForkResult>(error instanceof Error ? error.message : String(error))
+        }
+      }
+      case 'draft.get': {
+        if (!isStateGetPayload(payload)) return fail<DraftGetResult>('payload must be { sessionId: string }')
+        return ok<DraftGetResult>({ draft: getDraftFn(payload.sessionId) })
       }
       case 'config.get':
         return ok<ConfigResponse>(getConfig())
@@ -210,4 +254,11 @@ function isGeneratePayload(value: unknown): value is GeneratePayload {
 
 function isDismissPayload(value: unknown): value is DismissPayload {
   return isRecord(value) && typeof value.sessionId === 'string' && value.sessionId.length > 0
+}
+
+function isForkPayload(value: unknown): value is ForkPayload {
+  return isRecord(value)
+    && typeof value.sessionId === 'string' && value.sessionId.length > 0
+    && typeof value.messageId === 'string' && value.messageId.length > 0
+    && typeof value.draft === 'string'
 }

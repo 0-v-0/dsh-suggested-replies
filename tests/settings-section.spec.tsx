@@ -19,6 +19,7 @@ const fullConfig: ConfigResponse = {
   filterTooLong: true,
   manualShortcut: 'Mod+Shift+Space',
   manualReplacesDraft: true,
+  displayMode: 'latest',
 }
 
 describe('SuggestedRepliesSection', () => {
@@ -41,8 +42,8 @@ describe('SuggestedRepliesSection', () => {
     await screen.findByRole('heading', { name: '回复建议' })
     // 8 config toggles (no master switch)
     expect(screen.getAllByRole('switch')).toHaveLength(8)
-    // One select: reasoningEffort
-    expect(screen.getAllByRole('combobox')).toHaveLength(1)
+    // Two selects: reasoningEffort + displayMode
+    expect(screen.getAllByRole('combobox')).toHaveLength(2)
   })
 
   it('sends config.set on toggle change', async () => {
