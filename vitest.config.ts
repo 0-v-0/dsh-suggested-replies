@@ -5,5 +5,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     restoreMocks: true,
+    pool: 'threads',
+    exclude: ['**/node_modules/**', '**/.wt/**', '**/lib/**'],
   },
 })
