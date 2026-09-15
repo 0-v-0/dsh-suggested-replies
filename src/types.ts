@@ -11,12 +11,10 @@ export type ReasoningEffort = 'off' | 'auto'
 
 /** User-editable settings stored under the `suggested-replies` namespace. */
 export interface SuggestedRepliesSettings {
-  /** Whether completed turns may trigger an auxiliary candidate-generation Agent. */
-  enabled: boolean
+  /** Number of candidate messages per turn; 0 disables generation. */
+  suggestionCount: number
   /** Reasoning effort override: off disables thinking, auto follows model default. */
   reasoningEffort: ReasoningEffort
-  /** Number of candidate messages to generate per turn. */
-  suggestionCount: number
   /** Mask API keys and tokens in the transcript before sending to the model. */
   redactSecrets: boolean
   /** Remove escape sequences, control characters, and bidi override marks. */

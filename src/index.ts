@@ -119,8 +119,7 @@ export interface Config extends SuggestedRepliesSettings {
 
 /** Config schema with deployment-adjustable generation limits. */
 export const Config = z.object({
-  enabled: z.boolean().default(true).description('Enable next-message suggestions after completed turns.'),
-  suggestionCount: z.number().step(1).min(2).max(4).default(3).description('Number of candidate replies requested per completed turn.'),
+  suggestionCount: z.number().step(1).min(0).max(6).default(3).description('Number of candidate replies requested per completed turn. 0 disables generation.'),
   contextMessageCount: z.number().step(1).min(2).max(6).default(4).description('Trailing visible conversation messages supplied as context.'),
   maxSuggestionChars: z.number().step(1).min(32).max(300).default(160).description('Maximum characters retained for each candidate.'),
   maxTokens: z.number().step(1).min(64).max(1024).default(384).description('Maximum output tokens for the auxiliary model call.'),
@@ -157,11 +156,10 @@ export const Config = z.object({
   excludeNonHumanEvents: z.boolean().default(true).description('Exclude non-human events from transcripts.'),
 }) as unknown as z<Config>
 
-/** Settings schema intentionally exposes only the user-facing master switch. */
+/** Settings schema exposes all user-editable fields (no master switch). */
 const SettingsSchema = z.object({
-  enabled: z.boolean().default(true).description('Enable suggested replies after completed turns.'),
   reasoningEffort: z.union([z.const('off'), z.const('auto')]).default('off').description('Reasoning effort override.'),
-  suggestionCount: z.number().step(1).min(2).max(4).default(3).description('Number of candidate replies per turn.'),
+  suggestionCount: z.number().step(1).min(0).max(6).default(3).description('Number of candidate replies per turn. 0 disables generation.'),
   redactSecrets: z.boolean().default(true).description('Mask API keys and tokens in transcripts.'),
   stripControls: z.boolean().default(true).description('Strip control characters from output.'),
   singleLine: z.boolean().default(true).description('Force single-line output.'),
@@ -179,8 +177,8 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   const gate = new GenerationGate()
   const internalSessions = new Set<string>()
   const generationTasks = new Set<Promise<void>>()
+  const collapsedSessions = new Set<string>()
   let source: () => SuggestedRepliesSettings = () => ({
-    enabled: config.enabled,
     reasoningEffort: config.reasoningEffort,
     suggestionCount: config.suggestionCount,
     redactSecrets: config.redactSecrets,
@@ -193,7 +191,6 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     manualShortcut: config.manualShortcut,
     manualReplacesDraft: config.manualReplacesDraft,
   })
-  let enabledBeforeChange = source().enabled
   let disposing = false
 
   const cancelSession = (agent: Agent, flushSession: boolean): void => {
@@ -214,13 +211,11 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, source(), {
       setSource: next => { source = next },
       onChange: () => {
-        const enabled = source().enabled
-        if (!enabled && enabledBeforeChange) {
+        if (source().suggestionCount === 0) {
           void clearAll().catch((error: unknown) => {
             if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
           })
         }
-        enabledBeforeChange = enabled
       },
     })
   }
@@ -262,7 +257,8 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   }
 
   const startGenerationForSession = (agent: Agent, turn: number, _origin: SuggestionOrigin): void => {
-    if (!source().enabled) return
+    if (source().suggestionCount === 0) return
+    if (collapsedSessions.has(String(agent.id))) return
     if (agent.inbox.hasPending) return
 
     const lease = gate.start(String(agent.id), config.timeoutMs)
@@ -331,25 +327,11 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   registerSuggestedRepliesRpc(
     ctx,
     store,
-    () => source().enabled,
-    async enabled => {
-      const settings = ctx.get('settings')
-      if (settings === undefined) {
-        source = () => ({ enabled })
-        if (!enabled) await clearAll()
-        enabledBeforeChange = enabled
-        return
-      }
-      await settings.update(SETTINGS_NAMESPACE, { enabled })
-      if (!enabled) await clearAll()
-      enabledBeforeChange = source().enabled
-    },
     () => {
       const s = source()
       return {
-        enabled: s.enabled,
-        reasoningEffort: s.reasoningEffort,
         suggestionCount: s.suggestionCount,
+        reasoningEffort: s.reasoningEffort,
         redactSecrets: s.redactSecrets,
         stripControls: s.stripControls,
         singleLine: s.singleLine,
@@ -375,6 +357,13 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     },
     generateFn,
     dismissFn,
+    (sessionId: string, collapsed: boolean): void => {
+      if (collapsed) {
+        collapsedSessions.add(sessionId)
+      } else {
+        collapsedSessions.delete(sessionId)
+      }
+    },
   )
 
   return async () => {
@@ -383,6 +372,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     await Promise.all(generationTasks)
     await store.clearAll()
     internalSessions.clear()
+    collapsedSessions.clear()
     gate.dispose()
     await store.close()
   }

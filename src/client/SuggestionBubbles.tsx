@@ -208,6 +208,11 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     }
   }, [])
 
+  // Notify host of collapsed state on mount and when toggled
+  useEffect(() => {
+    void rpc.call('/suggested-replies', 'dock.setCollapsed', { sessionId, collapsed })
+  }, [rpc, sessionId, collapsed])
+
   const hasVisibleSuggestions = state !== undefined
     && state.phase !== 'cleared'
     && state.phase !== 'generating'
@@ -235,6 +240,16 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [rpc, sessionId])
 
+  // When expanding and no suggestions exist, lazily trigger generation
+  const lazyState = state
+  useEffect(() => {
+    if (lazyState === undefined) return
+    if (collapsed) return
+    if (lazyState.phase === 'generating') return
+    if (lazyState.suggestions.length > 0) return
+    void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })
+  }, [rpc, sessionId, collapsed, lazyState])
+
   if (state === undefined || state.phase === 'generating') return null
 
   const disabled = phase !== 'plain'
@@ -243,6 +258,7 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     const next = !collapsed
     setCollapsed(next)
     saveCollapsed(next)
+    void rpc.call('/suggested-replies', 'dock.setCollapsed', { sessionId, collapsed: next })
   }
 
   return (
