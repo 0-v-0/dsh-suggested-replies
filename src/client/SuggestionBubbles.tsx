@@ -218,38 +218,33 @@ export function SuggestionBubbles({ rpc, sessionId, useInput, inputActions, t }:
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [rpc, sessionId])
 
-  if (state === undefined || state.phase === 'cleared') return null
+  if (state === undefined) return null
 
-  if (state.phase === 'generating') {
-    return (
-      <div style={ROOT_STYLE}>
-        <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
-          <div className="dsh-suggested-replies-row dsh-suggested-replies-loading" role="status">{t('loading')}</div>
-        </div>
-      </div>
-    )
-  }
-
-  if (state.suggestions.length === 0) return null
   const disabled = phase !== 'plain'
+  const isLoading = state.phase === 'generating'
+  const showBubbles = state.phase !== 'generating' && state.suggestions.length > 0
 
   return (
     <div style={ROOT_STYLE}>
       <div className="dsh-suggested-replies-dock" data-suggested-replies-dock="">
         <div className="dsh-suggested-replies-row" aria-label={t('title')}>
           <span className="dsh-suggested-replies-label">{t('title')}</span>
-          {state.suggestions.map((text, index) => (
-            <button
-              key={`${state.turn}-${index}`}
-              type="button"
-              className="dsh-suggested-replies-bubble"
-              disabled={disabled}
-              title={t('hint')}
-              onClick={() => inputActions.setDraft(text)}
-            >
-              {text}
-            </button>
-          ))}
+          {isLoading
+            ? <span className="dsh-suggested-replies-loading" role="status">{t('loading')}</span>
+            : showBubbles
+              ? state.suggestions.map((text, index) => (
+                <button
+                  key={`${state.turn}-${index}`}
+                  type="button"
+                  className="dsh-suggested-replies-bubble"
+                  disabled={disabled}
+                  title={t('hint')}
+                  onClick={() => inputActions.setDraft(text)}
+                >
+                  {text}
+                </button>
+              ))
+              : null}
           <button
             type="button"
             className="dsh-suggested-replies-regenerate"
