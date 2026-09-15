@@ -82,13 +82,14 @@ function rpcReturning(initial: SuggestedRepliesStateResponse) {
 }
 
 describe('SuggestionBubbles', () => {
-  it('loads state.get, watches from its revision, and renders updates without projections', async () => {
+  it('renders nothing while generating, then shows bubbles when ready', async () => {
     const kit = rpcReturning(generating(4, 7))
     const component = props(kit.rpc, 'session-a')
-    const { getByRole } = render(<SuggestionBubbles {...component.value} />)
+    const { container, getByRole } = render(<SuggestionBubbles {...component.value} />)
 
-    expect((await waitFor(() => getByRole('status'))).textContent).toBe('生成中')
+    // While generating: panel hidden
     await waitFor(() => expect(kit.call).toHaveBeenCalledTimes(2))
+    expect(container.innerHTML).toBe('')
     expect(kit.call).toHaveBeenNthCalledWith(
       1,
       '/suggested-replies',
@@ -104,6 +105,7 @@ describe('SuggestionBubbles', () => {
       expect.any(AbortSignal),
     )
 
+    // After ready: bubbles appear
     await act(async () => kit.watch.resolve({ ok: true, value: ready(['继续实现'], 5, 7) }))
     expect(await waitFor(() => getByRole('button', { name: '继续实现' }))).toBeDefined()
   })
