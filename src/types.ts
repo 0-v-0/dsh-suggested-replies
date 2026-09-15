@@ -13,6 +13,28 @@ export type ReasoningEffort = 'off' | 'auto'
 export interface SuggestedRepliesSettings {
   /** Whether completed turns may trigger an auxiliary candidate-generation Agent. */
   enabled: boolean
+  /** Reasoning effort override: off disables thinking, auto follows model default. */
+  reasoningEffort: ReasoningEffort
+  /** Number of candidate messages to generate per turn. */
+  suggestionCount: number
+  /** Mask API keys and tokens in the transcript before sending to the model. */
+  redactSecrets: boolean
+  /** Remove escape sequences, control characters, and bidi override marks. */
+  stripControls: boolean
+  /** Ensure each suggestion is a single line with no embedded newlines. */
+  singleLine: boolean
+  /** Hide meta-text like 'no suggestion' or 'stay silent'. */
+  filterMetaText: boolean
+  /** Hide evaluative phrases like 'thanks', 'looks good'. */
+  filterEvaluative: boolean
+  /** Hide assistant-voice phrases like 'Let me…'. */
+  filterAssistantVoice: boolean
+  /** Hide suggestions exceeding 12 words or 100 bytes. */
+  filterTooLong: boolean
+  /** Keyboard shortcut for manual trigger; 'disabled' turns it off. */
+  manualShortcut: string
+  /** Manual trigger writes the first suggestion directly to the draft. */
+  manualReplacesDraft: boolean
 }
 
 /** Provider/model route used by one auxiliary candidate-generation Agent. */

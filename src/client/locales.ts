@@ -47,22 +47,21 @@ export type SuggestedRepliesKey =
   | 'settings.manualReplacesDraft.description'
   | 'settings.regenerate'
   | 'settings.regenerate.hint'
-  | 'settings.config.note'
 
 /** Locale namespace registered by the client plugin. */
 export const NS = 'suggested-replies'
 
 /** English copy. */
 export const en: Record<SuggestedRepliesKey, string> = {
-  title: 'Suggested next messages',
+  title: 'Reply suggestions',
   hint: 'Click to fill the message box',
-  loading: 'Preparing next-message suggestions...',
+  loading: 'Preparing reply suggestions...',
   regenerate: 'Regenerate suggestions',
   dismiss: 'Dismiss suggestions',
-  'settings.nav': 'Suggested replies',
-  'settings.title': 'Suggested replies',
+  'settings.nav': 'Reply suggestions',
+  'settings.title': 'Reply suggestions',
   'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
-  'settings.enabled.label': 'Enable suggested replies',
+  'settings.enabled.label': 'Enable reply suggestions',
   'settings.enabled.description': 'Generate candidate next messages after an AI reply. Clicking a candidate only fills the draft; it never sends automatically.',
   'settings.disabled.note': 'Disabled. Completed turns do not make auxiliary suggestion calls until you enable it again.',
   'settings.generation.title': 'Generation',
@@ -83,9 +82,9 @@ export const en: Record<SuggestedRepliesKey, string> = {
   'settings.filterMetaText.label': 'Filter meta-text',
   'settings.filterMetaText.description': "Hide meta-text like 'no suggestion' or 'stay silent'.",
   'settings.filterEvaluative.label': 'Filter evaluative phrases',
-  'settings.filterEvaluative.description': "Hide phrases like 'thanks', 'looks good', '不错'.",
+  'settings.filterEvaluative.description': "Hide phrases like 'thanks', 'looks good'.",
   'settings.filterAssistantVoice.label': 'Filter assistant voice',
-  'settings.filterAssistantVoice.description': "Hide phrases like 'Let me…', '我来…'.",
+  'settings.filterAssistantVoice.description': "Hide phrases like 'Let me…'.",
   'settings.filterTooLong.label': 'Filter overly long suggestions',
   'settings.filterTooLong.description': 'Hide suggestions exceeding 12 words or 100 bytes.',
   'settings.manual.title': 'Manual generation',
@@ -95,22 +94,21 @@ export const en: Record<SuggestedRepliesKey, string> = {
   'settings.manualReplacesDraft.description': 'Manual trigger writes the first suggestion directly to the draft.',
   'settings.regenerate': 'Regenerate',
   'settings.regenerate.hint': 'Click to regenerate suggestions',
-  'settings.config.note': 'These options are configured at deployment in cordis.patch.yml and cannot be changed here.',
 }
 
 /** Simplified Chinese copy. */
 export const zh: Record<SuggestedRepliesKey, string> = {
-  title: '下一步建议',
+  title: '回复建议',
   hint: '点击填入输入框',
-  loading: '正在生成下一步建议...',
+  loading: '正在生成回复建议...',
   regenerate: '重新生成建议',
   dismiss: '关闭建议',
-  'settings.nav': '下一步建议',
-  'settings.title': '下一步建议',
-  'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的下一步消息。默认沿用当前对话使用的模型。',
-  'settings.enabled.label': '启用下一步建议',
+  'settings.nav': '回复建议',
+  'settings.title': '回复建议',
+  'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的回复建议。默认沿用当前对话使用的模型。',
+  'settings.enabled.label': '启用回复建议',
   'settings.enabled.description': '点击建议只会把文字填入输入框，由你确认后发送，不会自动发出消息。',
-  'settings.disabled.note': '已关闭。AI 回复结束后不会再生成下一步建议。',
+  'settings.disabled.note': '已关闭。AI 回复结束后不会再生成回复建议。',
   'settings.generation.title': '生成设置',
   'settings.reasoningEffort.label': '思考强度',
   'settings.reasoningEffort.description': "设为'关闭'可禁用思考以加快建议生成。",
@@ -141,5 +139,4 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   'settings.manualReplacesDraft.description': '手动触发时将第一条建议直接写入草稿。',
   'settings.regenerate': '重新生成',
   'settings.regenerate.hint': '点击重新生成建议',
-  'settings.config.note': '这些选项在 cordis.patch.yml 中于部署时配置，无法在此修改。',
 }
