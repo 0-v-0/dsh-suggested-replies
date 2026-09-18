@@ -24,7 +24,7 @@ import {
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
-import type { ReasoningEffort, SuggestedRepliesSettings, SuggestionOrigin } from './types.ts'
+import type { ReasoningEffort, SuggestedRepliesSettings } from './types.ts'
 
 export type * from './types.ts'
 export type { SuggestedRepliesStateSnapshot } from './state.ts'
@@ -61,20 +61,12 @@ export interface Config extends SuggestedRepliesSettings {
   suggestionProvider?: string
   /** Optional explicit model for auxiliary calls; must be paired with `suggestionProvider`. */
   suggestionModel?: string
-  /** Whether to follow the current Session route instead of an explicit provider/model. */
-  followSessionRoute: boolean
   /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
   reasoningEffort: ReasoningEffort
   /** Maximum UTF-8 bytes of the final framed user prompt sent to the auxiliary model. */
   maxInputBytes: number
-  /** Number of recent completed turns to retain in the transcript for generation. */
-  maxRecentTurns: number
   /** Character budget for the transcript sent to the auxiliary model. */
   maxTranscriptChars: number
-  /** Number of conversation turns retained as context (aligns with maxRecentTurns). */
-  maxContextTurns: number
-  /** Byte budget for the retained context turns JSON. */
-  maxContextContextBytes: number
   /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
   redactSecrets: boolean
   /** Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. */
@@ -107,16 +99,6 @@ export interface Config extends SuggestedRepliesSettings {
   manualShortcut: string
   /** Whether manual trigger writes directly to the draft. */
   manualReplacesDraft: boolean
-  /** Pass current candidates as negative examples when regenerating manually. */
-  manualDedupe: boolean
-  /** Maximum retained skipped candidates per cycle for dedup. */
-  maxCycleSkipped: number
-  /** Maximum interaction outcome records stored in browser localStorage. */
-  maxLocalOutcomes: number
-  /** Whether to retain recent performance/cost metrics in host memory. */
-  recordMetrics: boolean
-  /** Exclude non-human events (injected instructions, runtime context) from transcripts. */
-  excludeNonHumanEvents: boolean
 }
 
 /** Config schema with deployment-adjustable generation limits. */
@@ -128,13 +110,9 @@ export const Config = z.object({
   timeoutMs: z.number().step(1).min(1_000).max(30_000).default(15_000).description('Maximum milliseconds an auxiliary model call may run.'),
   suggestionProvider: z.string().required(false).description('Optional explicit provider for auxiliary calls; omitted means inherit the current Session route.'),
   suggestionModel: z.string().required(false).description('Optional explicit model for auxiliary calls; must be paired with suggestionProvider.'),
-  followSessionRoute: z.boolean().default(true).description('Follow the current Session route instead of an explicit provider/model.'),
   reasoningEffort: z.union([z.const('off'), z.const('auto')]).default('off').description('Reasoning effort override: off disables thinking, auto follows model default.'),
   maxInputBytes: z.number().step(1).min(256).max(32_768).default(4096).description('Maximum UTF-8 bytes of the final framed user prompt.'),
-  maxRecentTurns: z.number().step(1).min(1).max(4).default(1).description('Number of recent completed turns retained in the transcript.'),
   maxTranscriptChars: z.number().step(1).min(1_000).max(60_000).default(12_000).description('Character budget for the transcript sent to the auxiliary model.'),
-  maxContextTurns: z.number().step(1).min(1).max(10).default(3).description('Number of conversation turns retained as context.'),
-  maxContextContextBytes: z.number().step(1).min(1_024).max(65_536).default(16_384).description('Byte budget for retained context turns JSON.'),
   redactSecrets: z.boolean().default(true).description('Mask API keys and bearer tokens in transcripts before sending to the model.'),
   stripEscapes: z.boolean().default(true).description('Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. Transcripts are always stripped.'),
   stripControls: z.boolean().default(true).description('Strip control chars, invisible format chars, and lone surrogates from candidate text. Transcripts are always stripped.'),
@@ -152,11 +130,6 @@ export const Config = z.object({
   manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger; disabled turns it off.'),
   manualReplacesDraft: z.boolean().default(true).description('Whether manual trigger writes directly to the draft.'),
   displayMode: z.union([z.const('latest'), z.const('all')]).default('latest').description('Where to show suggestion toggles: latest assistant message only, or all assistant messages.'),
-  manualDedupe: z.boolean().default(true).description('Pass current candidates as negative examples when regenerating manually.'),
-  maxCycleSkipped: z.number().step(1).min(0).max(50).default(10).description('Maximum retained skipped candidates per cycle for dedup.'),
-  maxLocalOutcomes: z.number().step(1).min(0).max(200).default(50).description('Maximum interaction outcome records stored in browser localStorage.'),
-  recordMetrics: z.boolean().default(true).description('Retain recent performance/cost metrics in host memory.'),
-  excludeNonHumanEvents: z.boolean().default(true).description('Exclude non-human events from transcripts.'),
 }) as unknown as z<Config>
 
 /** Keys of the user-editable subset of `Config` exposed through the settings section. */
@@ -233,10 +206,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       maxSuggestionChars: config.maxSuggestionChars,
       maxTokens: config.maxTokens,
       maxInputBytes: config.maxInputBytes,
-      maxRecentTurns: config.maxRecentTurns,
       maxTranscriptChars: config.maxTranscriptChars,
-      maxContextTurns: config.maxContextTurns,
-      maxContextContextBytes: config.maxContextContextBytes,
       reasoningEffort: s.reasoningEffort,
       redactSecrets: s.redactSecrets,
       stripEscapes: config.stripEscapes,
@@ -253,14 +223,11 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       allowSingleCommands: config.allowSingleCommands,
       filterFormatting: config.filterFormatting,
       manualReplacesDraft: s.manualReplacesDraft,
-      manualDedupe: config.manualDedupe,
-      maxCycleSkipped: config.maxCycleSkipped,
-      excludeNonHumanEvents: config.excludeNonHumanEvents,
       ...suggestionRoute === undefined ? {} : { suggestionRoute },
     }
   }
 
-  const startGenerationForSession = (agent: Agent, turn: number, _origin: SuggestionOrigin): void => {
+  const startGenerationForSession = (agent: Agent, turn: number): void => {
     if (source().suggestionCount === 0) return
     if (collapsedSessions.has(String(agent.id))) return
     if (agent.inbox.hasPending) return
@@ -303,7 +270,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     if (event.data.reason.kind !== 'completed' && event.data.reason.kind !== 'max-tokens') return
     const agent = ctx.agents.get(session.id)
     if (agent?.session !== session) return
-    startGenerationForSession(agent, event.data.turn, 'auto')
+    startGenerationForSession(agent, event.data.turn)
   })
 
   ctx.on('agent/inbox/inserted', ({ agent }) => {
@@ -323,7 +290,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     if (agent === undefined) return
     const resolvedTurn = turn ?? lastCompletedTurn(agent)
     if (resolvedTurn === null) return
-    startGenerationForSession(agent, resolvedTurn, 'manual')
+    startGenerationForSession(agent, resolvedTurn)
   }
 
   const dismissFn = async (sessionId: string): Promise<void> => {

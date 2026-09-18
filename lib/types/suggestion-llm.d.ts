@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
-import type { ReasoningEffort, SuggestionOrigin, SuggestedRepliesRoute, SuggestedReply } from './types.ts';
+import type { ReasoningEffort, SuggestedRepliesRoute, SuggestedReply } from './types.ts';
 import { type SuggestionOutputLimits } from './suggestion-prompt.ts';
 /** Resolved runtime choices for one suggested-replies model request. */
 export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
@@ -14,14 +14,8 @@ export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
     readonly suggestionRoute?: SuggestedRepliesRoute;
     /** Maximum UTF-8 bytes of the final framed user prompt sent to the auxiliary model. */
     readonly maxInputBytes: number;
-    /** Number of recent completed turns to retain in the transcript for generation. */
-    readonly maxRecentTurns: number;
     /** Character budget for the transcript sent to the auxiliary model. */
     readonly maxTranscriptChars: number;
-    /** Number of conversation turns retained as context (aligns with maxRecentTurns). */
-    readonly maxContextTurns: number;
-    /** Byte budget for the retained context turns JSON. */
-    readonly maxContextContextBytes: number;
     /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
     readonly reasoningEffort: ReasoningEffort;
     /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
@@ -54,12 +48,6 @@ export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
     readonly filterFormatting: boolean;
     /** Whether manual trigger writes directly to the draft. */
     readonly manualReplacesDraft: boolean;
-    /** Pass current candidates as negative examples when regenerating manually. */
-    readonly manualDedupe: boolean;
-    /** Maximum retained skipped candidates per cycle for dedup. */
-    readonly maxCycleSkipped: number;
-    /** Exclude non-human events (injected instructions, runtime context) from transcripts. */
-    readonly excludeNonHumanEvents: boolean;
 }
 /** Complete auxiliary request that the internal Agent logs through official events. */
 export interface PreparedSuggestionRequest {
@@ -71,10 +59,6 @@ export interface PreparedSuggestionRequest {
     readonly prompt: string;
     /** Maximum output tokens for the Agent request. */
     readonly maxTokens: number;
-    /** Whether this request was triggered automatically or by user action. */
-    readonly origin: SuggestionOrigin;
-    /** Previously skipped candidates to avoid when regenerating manually. */
-    readonly skippedCycle?: readonly string[];
 }
 /** Select the trailing model-visible conversation messages from a Session. */
 export declare function deriveRecentMessages(agent: Agent, contextMessageCount: number): any;

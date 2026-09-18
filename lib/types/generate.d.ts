@@ -8,20 +8,13 @@
  *
  * @module @anionex/dsh-suggested-replies/generate
  */
-import type { ReasoningEffort, SuggestedReply, SuggestedRepliesRoute } from './types.ts';
-import { type CleanSuggestionOptions, type FilterOptions } from './sanitize.ts';
+import type { SuggestedReply } from './types.ts';
 /** Configuration for the generation pipeline. */
 export interface GeneratePipelineConfig {
-    /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
-    readonly reasoningEffort: ReasoningEffort;
     /** Maximum UTF-8 bytes of the final framed user prompt sent to the model. */
     readonly maxInputBytes: number;
-    /** Number of recent completed turns to retain in the transcript. */
-    readonly maxRecentTurns: number;
     /** Character budget for the transcript sent to the model. */
     readonly maxTranscriptChars: number;
-    /** Whether to exclude non-human (injected) events from the transcript. */
-    readonly excludeNonHumanEvents: boolean;
     /** Whether to mask secrets in the transcript before sending to the model. */
     readonly redactSecrets: boolean;
     /** Maximum retained characters for one candidate message. */
@@ -53,10 +46,6 @@ export interface GeneratePipelineConfig {
     /** Filter residual formatting (newlines, asterisks). */
     readonly filterFormatting: boolean;
 }
-/** Build the clean options from a GeneratePipelineConfig. */
-export declare function deriveCleanOptions(config: GeneratePipelineConfig): CleanSuggestionOptions;
-/** Build the filter options from a GeneratePipelineConfig. */
-export declare function deriveFilterOptions(config: GeneratePipelineConfig): FilterOptions;
 /**
  * Sanitize the conversation transcript before sending to the model.
  *
@@ -93,20 +82,3 @@ export declare function processSuggestion(raw: string, config: GeneratePipelineC
  * @returns the deduplicated, cleaned, and filtered candidates.
  */
 export declare function processSuggestions(raw: readonly string[], config: GeneratePipelineConfig): SuggestedReply[];
-/**
- * Build the agent options with reasoning effort override.
- *
- * When `reasoningEffort` is `'off'`, the option is set explicitly so the
- * auxiliary call never spends budget on chain-of-thought. When it is
- * `'auto'`, the option is omitted and the model follows its default.
- * @param route - provider/model route for the auxiliary call.
- * @param maxTokens - maximum output tokens for the request.
- * @param reasoningEffort - reasoning effort override.
- * @returns the resolved agent options object.
- */
-export declare function resolveAgentOptions(route: SuggestedRepliesRoute, maxTokens: number, reasoningEffort: ReasoningEffort): {
-    provider: string;
-    model: string;
-    maxTokens: number;
-    reasoningEffort?: ReasoningEffort;
-};

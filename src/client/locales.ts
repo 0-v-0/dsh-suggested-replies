@@ -11,7 +11,6 @@ export type SuggestedRepliesKey =
   | 'loading'
   | 'branchHint'
   | 'regenerate'
-  | 'dismiss'
   | 'settings.nav'
   | 'settings.title'
   | 'settings.description'
@@ -48,8 +47,6 @@ export type SuggestedRepliesKey =
   | 'settings.manualShortcut.description'
   | 'settings.manualReplacesDraft.label'
   | 'settings.manualReplacesDraft.description'
-  | 'settings.regenerate'
-  | 'settings.regenerate.hint'
 
 /** Locale namespace registered by the client plugin. */
 export const NS = 'suggested-replies'
@@ -61,7 +58,6 @@ export const en: Record<SuggestedRepliesKey, string> = {
   loading: 'Preparing reply suggestions...',
   branchHint: 'Click to fork the conversation and fill the message box',
   regenerate: 'Regenerate suggestions',
-  dismiss: 'Dismiss suggestions',
   'settings.nav': 'Reply suggestions',
   'settings.title': 'Reply suggestions',
   'settings.description': 'After an AI reply, prepare a few likely next messages above the input box. Suggestions use the current conversation model by default.',
@@ -98,8 +94,6 @@ export const en: Record<SuggestedRepliesKey, string> = {
   'settings.manualShortcut.description': "Shortcut to manually trigger suggestion generation. Set to 'disabled' to turn off.",
   'settings.manualReplacesDraft.label': 'Write to draft',
   'settings.manualReplacesDraft.description': 'Manual trigger writes the first suggestion directly to the draft.',
-  'settings.regenerate': 'Regenerate',
-  'settings.regenerate.hint': 'Click to regenerate suggestions',
 }
 
 /** Simplified Chinese copy. */
@@ -109,7 +103,6 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   loading: '正在生成回复建议...',
   branchHint: '点击创建会话分支并填入输入框',
   regenerate: '重新生成建议',
-  dismiss: '关闭建议',
   'settings.nav': '回复建议',
   'settings.title': '回复建议',
   'settings.description': 'AI 回复结束后，在输入框上方准备几条可能的回复建议。默认沿用当前对话使用的模型。',
@@ -146,6 +139,4 @@ export const zh: Record<SuggestedRepliesKey, string> = {
   'settings.manualShortcut.description': "手动触发建议生成的快捷键。设为'disabled'可关闭。",
   'settings.manualReplacesDraft.label': '写入草稿',
   'settings.manualReplacesDraft.description': '手动触发时将第一条建议直接写入草稿。',
-  'settings.regenerate': '重新生成',
-  'settings.regenerate.hint': '点击重新生成建议',
 }

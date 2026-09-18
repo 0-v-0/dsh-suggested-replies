@@ -3,9 +3,6 @@
 /** One candidate that can be copied into the user's next message draft. */
 export type SuggestedReply = string
 
-/** Whether a generation was triggered automatically or by user action. */
-export type SuggestionOrigin = 'auto' | 'manual'
-
 /** Reasoning effort override for the auxiliary model call. */
 export type ReasoningEffort = 'off' | 'auto'
 

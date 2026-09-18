@@ -12,7 +12,7 @@
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SuggestedRepliesStateResponse } from '../rpc.ts'
@@ -61,6 +61,8 @@ interface ObservedState {
 
 const STYLE_TAG_ID = 'dsh-suggested-replies-style'
 const COLLAPSE_KEY = 'dsh-suggested-replies-collapsed'
+/** Auto-generations permitted per message while the dropdown is open. */
+const MAX_LAZY_ATTEMPTS = 1
 let styleUsers = 0
 
 const CSS_TEXT = `
@@ -181,8 +183,6 @@ const CSS_TEXT = `
 }
 `
 
-const wrapStyle: CSSProperties = { position: 'relative', display: 'inline-flex', alignItems: 'center' }
-
 function loadCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
 }
@@ -290,21 +290,24 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
     ? observed.value
     : undefined
 
-  // Lazy-load: when expanded and no suggestions exist, trigger generation
-  const lazyState = state
+  // Lazy-load: when expanded and no suggestions exist, trigger one generation.
+  // Attempts are bounded per message, otherwise a turn whose candidates were all
+  // filtered out would re-arm this effect forever and keep calling the model.
+  const lazyAttempts = useRef(new Map<string, number>())
   useEffect(() => {
-    if (lazyState === undefined) return
-    if (collapsed) return
-    if (lazyState.phase === 'generating') return
-    if (lazyState.suggestions.length > 0) return
+    if (state === undefined || collapsed) return
+    if (state.phase === 'generating' || state.suggestions.length > 0) return
     // Only trigger if this messageId matches the state's messageId
-    if (lazyState.messageId !== null && lazyState.messageId !== messageId) return
+    if (state.messageId !== null && state.messageId !== messageId) return
+    const key = `${sessionId}:${messageId}`
+    if ((lazyAttempts.current.get(key) ?? 0) >= MAX_LAZY_ATTEMPTS) return
+    lazyAttempts.current.set(key, (lazyAttempts.current.get(key) ?? 0) + 1)
     void rpc.call('/suggested-replies', 'suggestions.generate', { sessionId })
-  }, [rpc, sessionId, collapsed, lazyState, messageId])
+  }, [rpc, sessionId, collapsed, state, messageId])
 
   if (state === undefined || state.phase === 'generating') return null
 
-  const isLatest = state.messageId === null || state.messageId === messageId
+  const isLatest = state.messageId === messageId
 
   // In 'latest' mode: only render on the matching message
   if (displayMode === 'latest' && !isLatest) return null
@@ -319,7 +322,7 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
   }
 
   return (
-    <div ref={wrapRef} className="dsh-sr-wrap" style={wrapStyle}>
+    <div ref={wrapRef} className="dsh-sr-wrap">
       <button
         type="button"
         className="dsh-sr-toggle"

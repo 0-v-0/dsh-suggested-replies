@@ -26,20 +26,12 @@ export interface Config extends SuggestedRepliesSettings {
     suggestionProvider?: string;
     /** Optional explicit model for auxiliary calls; must be paired with `suggestionProvider`. */
     suggestionModel?: string;
-    /** Whether to follow the current Session route instead of an explicit provider/model. */
-    followSessionRoute: boolean;
     /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
     reasoningEffort: ReasoningEffort;
     /** Maximum UTF-8 bytes of the final framed user prompt sent to the auxiliary model. */
     maxInputBytes: number;
-    /** Number of recent completed turns to retain in the transcript for generation. */
-    maxRecentTurns: number;
     /** Character budget for the transcript sent to the auxiliary model. */
     maxTranscriptChars: number;
-    /** Number of conversation turns retained as context (aligns with maxRecentTurns). */
-    maxContextTurns: number;
-    /** Byte budget for the retained context turns JSON. */
-    maxContextContextBytes: number;
     /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
     redactSecrets: boolean;
     /** Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. */
@@ -72,16 +64,6 @@ export interface Config extends SuggestedRepliesSettings {
     manualShortcut: string;
     /** Whether manual trigger writes directly to the draft. */
     manualReplacesDraft: boolean;
-    /** Pass current candidates as negative examples when regenerating manually. */
-    manualDedupe: boolean;
-    /** Maximum retained skipped candidates per cycle for dedup. */
-    maxCycleSkipped: number;
-    /** Maximum interaction outcome records stored in browser localStorage. */
-    maxLocalOutcomes: number;
-    /** Whether to retain recent performance/cost metrics in host memory. */
-    recordMetrics: boolean;
-    /** Exclude non-human events (injected instructions, runtime context) from transcripts. */
-    excludeNonHumanEvents: boolean;
 }
 /** Config schema with deployment-adjustable generation limits. */
 export declare const Config: z<Config>;
