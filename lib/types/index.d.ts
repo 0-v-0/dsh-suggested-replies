@@ -1,7 +1,7 @@
 /** Suggested replies host plugin with plugin-owned sidecar state. */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { ReasoningEffort, SuggestedRepliesSettings } from './types.ts';
+import { type ReasoningEffort, type SuggestedRepliesSettings } from './types.ts';
 export type * from './types.ts';
 export type { SuggestedRepliesStateSnapshot } from './state.ts';
 /** Cordis plugin identity. */
@@ -40,7 +40,7 @@ export interface Config extends SuggestedRepliesSettings {
     stripControls: boolean;
     /** Strip code fences and surrounding paired quotes from model output. */
     stripFencesAndQuotes: boolean;
-    /** Collapse whitespace and force single-line output. */
+    /** Collapse every whitespace run to a single space. */
     collapseWhitespace: boolean;
     /** Force candidates to a single line with no embedded newlines. */
     singleLine: boolean;

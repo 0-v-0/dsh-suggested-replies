@@ -21,48 +21,22 @@ import {
   type GeneratePipelineConfig,
 } from './generate.ts'
 
-/** Resolved runtime choices for one suggested-replies model request. */
-export interface SuggestionGenerationConfig extends SuggestionOutputLimits {
+/**
+ * Resolved runtime choices for one suggested-replies model request.
+ *
+ * Extends the pipeline and output-limit configs rather than restating them, so a
+ * new cleaning or filtering toggle cannot drift between the two declarations.
+ */
+export interface SuggestionGenerationConfig
+  extends SuggestionOutputLimits, GeneratePipelineConfig {
   /** Number of recent model-visible messages retained as context. */
   readonly contextMessageCount: number
   /** Maximum output tokens requested from the model. */
   readonly maxTokens: number
   /** Optional explicit auxiliary route that overrides the conversation route. */
   readonly suggestionRoute?: SuggestedRepliesRoute
-  /** Maximum UTF-8 bytes of the final framed user prompt sent to the auxiliary model. */
-  readonly maxInputBytes: number
-  /** Character budget for the transcript sent to the auxiliary model. */
-  readonly maxTranscriptChars: number
   /** Reasoning effort override: `off` disables thinking, `auto` follows model default. */
   readonly reasoningEffort: ReasoningEffort
-  /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
-  readonly redactSecrets: boolean
-  /** Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. */
-  readonly stripEscapes: boolean
-  /** Strip control chars, invisible format chars, and lone surrogates from candidate text. */
-  readonly stripControls: boolean
-  /** Strip code fences and surrounding paired quotes from model output. */
-  readonly stripFencesAndQuotes: boolean
-  /** Collapse whitespace and force single-line output. */
-  readonly collapseWhitespace: boolean
-  /** Force candidates to a single line with no embedded newlines. */
-  readonly singleLine: boolean
-  /** Filter meta-text like “no suggestion” or “stay silent”. */
-  readonly filterMetaText: boolean
-  /** Filter error echoes like “api error:” or “error:”. */
-  readonly filterErrorEcho: boolean
-  /** Filter evaluative phrases like “thanks”, “looks good”, “不错”. */
-  readonly filterEvaluative: boolean
-  /** Filter assistant-voice phrases like “Let me…”, “我来…”. */
-  readonly filterAssistantVoice: boolean
-  /** Filter multi-sentence candidates. */
-  readonly filterMultiSentence: boolean
-  /** Filter candidates that are too long (>12 English words or ≥100 bytes). */
-  readonly filterTooLong: boolean
-  /** Allow single-word whitelist entries (yes/ok/继续) and slash commands. */
-  readonly allowSingleCommands: boolean
-  /** Filter residual formatting (newlines, asterisks). */
-  readonly filterFormatting: boolean
   /** Whether manual trigger writes directly to the draft. */
   readonly manualReplacesDraft: boolean
 }
@@ -124,7 +98,7 @@ export function prepareSuggestionRequest(
   if (route === null) return null
   const rawPrompt = buildSuggestedRepliesUserPrompt(deriveRecentMessages(agent, config.contextMessageCount))
   if (rawPrompt === null) return null
-  const prompt = sanitizeTranscript(rawPrompt, config as GeneratePipelineConfig)
+  const prompt = sanitizeTranscript(rawPrompt, config)
   return {
     route,
     system: buildSuggestionSystemPrompt(config),
@@ -281,6 +255,6 @@ export async function generateSuggestedReplies(
   }
   if (output === null) return null
   const parsed = parseSuggestedReplies(output, config) ?? fallbackSuggestedReplies(request.prompt, config)
-  const processed = processSuggestions(parsed, config as GeneratePipelineConfig)
+  const processed = processSuggestions(parsed, config)
   return processed.length > 0 ? processed : null
 }

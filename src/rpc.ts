@@ -51,7 +51,10 @@ export interface DismissPayload {
   readonly sessionId: string
 }
 
-/** Generic success response returned by manual-trigger endpoints. */
+/**
+ * Acknowledgement response shared by the manual-trigger endpoints
+ * (`suggestions.generate`, `suggestions.dismiss`) and `dock.setCollapsed`.
+ */
 export interface GenerateResult {
   /** Acknowledgement that the action was accepted. */
   readonly ok: true

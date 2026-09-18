@@ -1,13 +1,15 @@
 /**
- * Assistant-actions slot entry: renders suggestion bubbles below the latest
- * finalized assistant message. Gets `setDraft` from a module-level cache
- * populated by the hidden dock component.
+ * Assistant-actions slot entry. Renders the suggestion toggle inline in the
+ * MessageIconActions row; in `latest` display mode only the message matching
+ * the current sidecar row renders it, while `all` mode renders it on every
+ * assistant message and switches click-to-draft for a fork at that message.
+ * `setDraft` comes from a module-level cache populated by the hidden dock
+ * component.
  *
- * Layout: a compact icon toggle button sits inline in the MessageIconActions
- * row (28×28, matching other action buttons). When expanded, an absolutely
- * positioned dropdown drops straight down below the button — it does not
- * push siblings or affect the row layout. The dropdown scrolls internally
- * when content exceeds its max-height.
+ * Layout: a compact icon toggle button (28×28, matching other action buttons).
+ * When expanded, an absolutely positioned dropdown pops upward above the
+ * button — it does not push siblings or affect the row layout. The dropdown
+ * scrolls internally when content exceeds its max-height.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */
@@ -63,6 +65,10 @@ const STYLE_TAG_ID = 'dsh-suggested-replies-style'
 const COLLAPSE_KEY = 'dsh-suggested-replies-collapsed'
 /** Auto-generations permitted per message while the dropdown is open. */
 const MAX_LAZY_ATTEMPTS = 1
+/** Consecutive sidecar-state subscription failures before re-arming is abandoned. */
+const MAX_STATE_RECONNECTS = 5
+/** Delay before retrying a failed sidecar-state subscription. */
+const STATE_RECONNECT_DELAY_MS = 1000
 let styleUsers = 0
 
 const CSS_TEXT = `
@@ -223,6 +229,9 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [collapsed])
+  /** Consecutive sidecar-state subscription failures, reset by a successful one. */
+  const watchFailures = useRef(0)
+
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
@@ -235,35 +244,59 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
       setObserved(current => current?.messageId === messageId ? undefined : current)
     }
 
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
     void (async () => {
-      try {
-        const initial = await rpc.call(
-          '/suggested-replies', 'state.get', { sessionId }, signal,
-        ) as StateResult
-        if (signal.aborted) return
-        if (!initial.ok) { clear(); return }
+      let current: SuggestedRepliesStateResponse | undefined
 
-        let current = initial.value
-        publish(current)
-
-        while (!signal.aborted) {
-          const watched = await rpc.call(
-            '/suggested-replies', 'state.watch',
-            { sessionId, lifecycle: current.lifecycle, revision: current.revision },
-            signal,
-          ) as StateResult
+      // One failed RPC must not kill the subscription for the component's whole
+      // life: a dead watch would hide the toggle and leave the regenerate
+      // button with nowhere to publish. Back off and re-subscribe instead,
+      // giving up only after consecutive failures or on unmount.
+      while (!signal.aborted) {
+        try {
+          if (current === undefined) {
+            const initial = await rpc.call(
+              '/suggested-replies', 'state.get', { sessionId }, signal,
+            ) as StateResult
+            if (signal.aborted) return
+            if (!initial.ok) throw new Error(initial.error.message)
+            current = initial.value as SuggestedRepliesStateResponse
+            publish(current)
+          }
+          // A successful subscription resets the streak, so a connection that
+          // flaps but recovers keeps watching instead of hitting the cap.
+          watchFailures.current = 0
+          while (!signal.aborted) {
+            const watched = await rpc.call(
+              '/suggested-replies', 'state.watch',
+              { sessionId, lifecycle: current.lifecycle, revision: current.revision },
+              signal,
+            ) as StateResult
+            if (signal.aborted) return
+            if (!watched.ok) throw new Error(watched.error.message)
+            current = watched.value as SuggestedRepliesStateResponse
+            void refreshDisplayMode(rpc)
+            publish(current)
+          }
+        } catch {
           if (signal.aborted) return
-          if (!watched.ok) { clear(); return }
-          current = watched.value
-          void refreshDisplayMode(rpc)
-          publish(current)
+          clear()
+          current = undefined
+          watchFailures.current += 1
+          if (watchFailures.current > MAX_STATE_RECONNECTS) return
+          await new Promise<void>(resolve => {
+            retryTimer = setTimeout(resolve, STATE_RECONNECT_DELAY_MS)
+            signal.addEventListener('abort', () => resolve(), { once: true })
+          })
         }
-      } catch {
-        clear()
       }
     })()
 
-    return () => controller.abort()
+    return () => {
+      if (retryTimer !== undefined) clearTimeout(retryTimer)
+      controller.abort()
+    }
   }, [rpc, sessionId, messageId])
 
   useEffect(() => {

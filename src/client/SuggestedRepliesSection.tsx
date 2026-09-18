@@ -1,5 +1,6 @@
 /**
- * Settings section for the suggested-replies master switch and editable config.
+ * Settings section for the suggested-replies editable config. There is no
+ * master switch: `suggestionCount: 0` is the only way to turn generation off.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */
@@ -8,6 +9,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { ClientConnectionRpc, RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigResponse, ConfigSetPayload } from '../rpc.ts'
+import { MAX_SUGGESTION_COUNT } from '../types.ts'
 
 /** Session-independent injected connection face. */
 export interface SuggestedRepliesSectionInjected {
@@ -172,13 +174,13 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
           <input
             type="number"
             min={0}
-            max={6}
+            max={MAX_SUGGESTION_COUNT}
             step={1}
             style={{ ...selectStyle, width: 60, textAlign: 'center' }}
             disabled={writing}
             value={config.suggestionCount}
             onChange={e => {
-              const n = Math.max(0, Math.min(6, Math.floor(Number(e.target.value) || 0)))
+              const n = Math.max(0, Math.min(MAX_SUGGESTION_COUNT, Math.floor(Number(e.target.value) || 0)))
               void patch({ suggestionCount: n })
             }}
           />

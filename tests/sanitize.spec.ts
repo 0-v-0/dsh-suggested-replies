@@ -46,8 +46,11 @@ const filterOpts: FilterOptions = {
 }
 
 describe('redactSecrets', () => {
-  it('masks AWS access keys', () => {
+  it('masks AWS access keys, long-term and STS temporary credentials', () => {
     expect(redactSecrets(`access_key_id=${awsAccessKeyId('AKIA')}`)).toBe('access_key_id=<aws_access_key>')
+    // ASIA-prefixed STS credentials are the more common shape people paste,
+    // since long-term IAM keys are being replaced by short-lived ones.
+    expect(redactSecrets(`sts ${awsAccessKeyId('ASIA')}`)).toBe('sts <aws_access_key>')
   })
 
   it('masks OpenAI-style keys', () => {
@@ -71,6 +74,15 @@ describe('redactSecrets', () => {
   it('masks Bearer tokens', () => {
     const result = redactSecrets(`Authorization: Bearer ${bearerCredential()}`)
     expect(result).toBe('Authorization: Bearer [REDACTED_SECRET]')
+  })
+
+  it('masks the whole of a base64 Bearer token, not just its base64url half', () => {
+    // Base64 (unlike base64url) uses `+` and `/`, so a value class that omits
+    // them left the tail of the token in the transcript.
+    const token = 'eyJhbGciOiJIUzI1NiJ9.abc-/Q==.sig'
+    const result = redactSecrets(`Authorization: Bearer ${token} end`)
+    expect(result).toBe('Authorization: Bearer [REDACTED_SECRET] end')
+    expect(result).not.toContain(token)
   })
 
   it('leaves normal text unchanged', () => {
@@ -112,8 +124,17 @@ describe('redactSecrets', () => {
     // Stripe key fixtures are generated at runtime; committed literals trip GitHub push protection.
   })
 
-  it('masks Google API keys', () => {
-    expect(redactSecrets('AIzaabcdefghijklmnopqrstuvwxyz1234567')).toBe('<google_api_key>')
+  it('masks Google API keys at the real 39-character length', () => {
+    // `AIza` plus 35 base64url characters. The length is exact, so a shorter
+    // fixture is not a real key; pinning the old 37-character fixture made the
+    // test pass while a genuine 39-character key sailed through the transcript.
+    const realKey = googleApiKey()
+    expect(realKey.length).toBe(39)
+    expect(redactSecrets(realKey)).toBe('<google_api_key>')
+  })
+
+  it('does not mask a Google-shaped string too short to be real', () => {
+    expect(redactSecrets('AIzaabcdefghijklmnopqrstuvwxyz1234567')).toBe('AIzaabcdefghijklmnopqrstuvwxyz1234567')
   })
 
   it('masks GitLab tokens', () => {
@@ -342,5 +363,14 @@ describe('shouldFilterSuggestion', () => {
   it('filters residual formatting', () => {
     expect(shouldFilterSuggestion('hello\nworld', filterOpts)).toBe(true)
     expect(shouldFilterSuggestion('*italic text*', filterOpts)).toBe(true)
+  })
+
+  it('filters two-sentence candidates, not only three or more', () => {
+    // One `[.!?] <space> <capital>` boundary separates exactly two sentences,
+    // so a single match already means the candidate is multi-sentence. The old
+    // `>= 2` bound dropped three-sentence prompts while letting two through.
+    expect(shouldFilterSuggestion('Continue. Add the missing tests.', filterOpts)).toBe(true)
+    expect(shouldFilterSuggestion('请继续。再补充测试。', filterOpts)).toBe(true)
+    expect(shouldFilterSuggestion('Continue', filterOpts)).toBe(false)
   })
 })

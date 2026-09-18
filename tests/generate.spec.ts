@@ -12,11 +12,8 @@ import { byteLength } from '../src/sanitize.ts'
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
 
 const pipeline: GeneratePipelineConfig = {
-  reasoningEffort: 'off',
   maxInputBytes: 4096,
-  maxRecentTurns: 1,
   maxTranscriptChars: 12_000,
-  excludeNonHumanEvents: true,
   redactSecrets: true,
   maxSuggestionChars: 160,
   stripEscapes: true,

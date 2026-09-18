@@ -100,10 +100,13 @@ describe('parseSuggestedReplies', () => {
 })
 
 describe('fallbackSuggestedReplies', () => {
-  it('returns the configured count in the recent conversation language', () => {
-    expect(fallbackSuggestedReplies('User: 你好', limits)).toEqual(['继续', '请详细说明一下', '给我一个具体例子'])
-    expect(fallbackSuggestedReplies('User: Hello', { ...limits, suggestionCount: 2 }))
-      .toEqual(['Continue', 'Could you'])
+  it('returns the first configured candidates in the recent conversation language', () => {
+    // A realistic budget: the shared `limits` of 10 chars truncates the pool,
+    // which would pin a garbled fallback as the expected output.
+    const full = { suggestionCount: 3, maxSuggestionChars: 160 }
+    expect(fallbackSuggestedReplies('User: 你好', full)).toEqual(['继续', '请详细说明一下', '给我一个具体例子'])
+    expect(fallbackSuggestedReplies('User: Hello', { ...full, suggestionCount: 2 }))
+      .toEqual(['Continue', 'Could you explain that in more detail?'])
   })
 
   it('covers the full configurable candidate range', () => {

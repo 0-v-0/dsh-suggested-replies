@@ -77,8 +77,9 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
     pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9 ]*PRIVATE )?KEY-----/g,
     label: '<private_key>',
   },
-  // AWS access key ids.
-  { pattern: /\bAKIA[0-9A-Z]{16,}\b/g, label: '<aws_access_key>' },
+  // AWS access key ids. `AKIA` is a long-term IAM key; `ASIA` is an STS
+  // temporary credential, which is the more common shape people paste today.
+  { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16,}\b/g, label: '<aws_access_key>' },
   // OpenAI-style sk- tokens (20+ alphanumeric characters after sk-).
   { pattern: /\bsk-[a-zA-Z0-9]{20,}\b/g, label: '<openai_api_key>' },
   // GitHub fine-grained and classic tokens (gho_, ghs_, ghu_, ghp_, github_pat_).
@@ -88,16 +89,20 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
   { pattern: /\bxox[bpoa]-[a-zA-Z0-9-]+\b/g, label: '<slack_token>' },
   // Stripe publishable/secret keys in both `sk_live_` and `sk_test_` form.
   { pattern: /\b[psr]k_(?:live|test|view|prod|dev)_[A-Za-z0-9]{8,}\b/g, label: '<stripe_key>' },
-  // Google API keys (AIza + 33 base64url characters).
-  { pattern: /\bAIza[0-9A-Za-z\-_]{33}\b/g, label: '<google_api_key>' },
+  // Google API keys: the `AIza` prefix plus 35 base64url characters, 39 total.
+  // The length is exact, so a shorter fixture is silently not a real key.
+  { pattern: /\bAIza[0-9A-Za-z\-_]{35}\b/g, label: '<google_api_key>' },
   // GitLab personal/project access tokens (glpat-, glptt-).
   { pattern: /\bgl(?:pat|ptt)-[0-9A-Za-z_\-]{12,}\b/g, label: '<gitlab_token>' },
   // Compact JWTs (three dot-separated base64url segments starting with eyJ).
   { pattern: /\beyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g, label: '<jwt_token>' },
   // Generic API keys (rk_ prefix).
   { pattern: /\brk_[a-zA-Z0-9]+\b/g, label: '<api_key>' },
-  // Bearer tokens (replaced with a redacted placeholder, not a label).
-  { pattern: /\b[Bb]earer\s+[a-zA-Z0-9_.-]+/g, label: 'Bearer [REDACTED_SECRET]' },
+  // Bearer tokens (replaced with a redacted placeholder, not a label). The
+  // value class is every base64/base64url character, including the `+`, `/`
+  // and `=` padding that base64url omits; a narrower class left the tail of a
+  // base64 token sitting in the transcript after the label.
+  { pattern: /\b[Bb]earer\s+[A-Za-z0-9_.+/=-]+/g, label: 'Bearer [REDACTED_SECRET]' },
   // Last resort: a keyed credential assignment whose value has no known shape.
   // The key name is matched as a tail (`..._key`, `..._token`, `..._secret`,
   // `pwd`, `passwd`, `apikey`), which keeps prose like "the key is here" or
@@ -403,10 +408,13 @@ export function shouldFilterSuggestion(text: string, options: FilterOptions): bo
   }
 
   if (options.filterMultiSentence) {
+    // One boundary separates two sentences, so a single match already means
+    // the candidate is multi-sentence; requiring two dropped 2-sentence
+    // prompts and only caught three or more.
     const asciiBoundaries = (value.match(/[.!?]\s+[A-Z]/g) ?? []).length
-    if (asciiBoundaries >= 2) return true
+    if (asciiBoundaries >= 1) return true
     const cjkPeriods = (value.match(/。/g) ?? []).length
-    if (cjkPeriods >= 2) return true
+    if (cjkPeriods >= 1) return true
   }
 
   if (options.filterFormatting) {

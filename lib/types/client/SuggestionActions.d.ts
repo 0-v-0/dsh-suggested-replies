@@ -1,13 +1,15 @@
 /**
- * Assistant-actions slot entry: renders suggestion bubbles below the latest
- * finalized assistant message. Gets `setDraft` from a module-level cache
- * populated by the hidden dock component.
+ * Assistant-actions slot entry. Renders the suggestion toggle inline in the
+ * MessageIconActions row; in `latest` display mode only the message matching
+ * the current sidecar row renders it, while `all` mode renders it on every
+ * assistant message and switches click-to-draft for a fork at that message.
+ * `setDraft` comes from a module-level cache populated by the hidden dock
+ * component.
  *
- * Layout: a compact icon toggle button sits inline in the MessageIconActions
- * row (28×28, matching other action buttons). When expanded, an absolutely
- * positioned dropdown drops straight down below the button — it does not
- * push siblings or affect the row layout. The dropdown scrolls internally
- * when content exceeds its max-height.
+ * Layout: a compact icon toggle button (28×28, matching other action buttons).
+ * When expanded, an absolutely positioned dropdown pops upward above the
+ * button — it does not push siblings or affect the row layout. The dropdown
+ * scrolls internally when content exceeds its max-height.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestionActions
  */

@@ -24,7 +24,7 @@ import {
   type PreparedSuggestionRequest,
   type SuggestionGenerationConfig,
 } from './suggestion-llm.ts'
-import type { ReasoningEffort, SuggestedRepliesSettings } from './types.ts'
+import { MAX_SUGGESTION_COUNT, type ReasoningEffort, type SuggestedRepliesSettings } from './types.ts'
 
 export type * from './types.ts'
 export type { SuggestedRepliesStateSnapshot } from './state.ts'
@@ -75,7 +75,7 @@ export interface Config extends SuggestedRepliesSettings {
   stripControls: boolean
   /** Strip code fences and surrounding paired quotes from model output. */
   stripFencesAndQuotes: boolean
-  /** Collapse whitespace and force single-line output. */
+  /** Collapse every whitespace run to a single space. */
   collapseWhitespace: boolean
   /** Force candidates to a single line with no embedded newlines. */
   singleLine: boolean
@@ -103,7 +103,7 @@ export interface Config extends SuggestedRepliesSettings {
 
 /** Config schema with deployment-adjustable generation limits. */
 export const Config = z.object({
-  suggestionCount: z.number().step(1).min(0).max(6).default(3).description('Number of candidate replies requested per completed turn. 0 disables generation.'),
+  suggestionCount: z.number().step(1).min(0).max(MAX_SUGGESTION_COUNT).default(3).description('Number of candidate replies requested per completed turn. 0 disables generation.'),
   contextMessageCount: z.number().step(1).min(2).max(6).default(4).description('Trailing visible conversation messages supplied as context.'),
   maxSuggestionChars: z.number().step(1).min(32).max(300).default(160).description('Maximum characters retained for each candidate.'),
   maxTokens: z.number().step(1).min(64).max(1024).default(384).description('Maximum output tokens for the auxiliary model call.'),
@@ -117,7 +117,7 @@ export const Config = z.object({
   stripEscapes: z.boolean().default(true).description('Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. Transcripts are always stripped.'),
   stripControls: z.boolean().default(true).description('Strip control chars, invisible format chars, and lone surrogates from candidate text. Transcripts are always stripped.'),
   stripFencesAndQuotes: z.boolean().default(true).description('Strip code fences and surrounding paired quotes from model output.'),
-  collapseWhitespace: z.boolean().default(true).description('Collapse whitespace and force single-line output.'),
+  collapseWhitespace: z.boolean().default(true).description('Collapse every whitespace run to a single space. Single-lining is controlled separately by singleLine.'),
   singleLine: z.boolean().default(true).description('Force candidates to a single line with no embedded newlines.'),
   filterMetaText: z.boolean().default(true).description('Filter meta-text like “no suggestion” or “stay silent”.'),
   filterErrorEcho: z.boolean().default(true).description('Filter error echoes like “api error:” or “error:”.'),
@@ -180,20 +180,25 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     })
   }
 
+  // A disabled setting must invalidate the active generation, whether the change
+  // arrives through the settings service or through the `config.set` RPC, so a
+  // run started under the old snapshot cannot commit stale output.
+  const applySettingsChange = (): void => {
+    // Abort in-flight runs so none commits output built from the settings
+    // snapshot captured at its start.
+    gate.cancelAll()
+    if (source().suggestionCount === 0) {
+      void store.clearAll().catch((error: unknown) => {
+        if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
+      })
+    }
+  }
+
   const settingsService = ctx.get('settings')
   if (settingsService !== undefined) {
     settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, source(), {
       setSource: next => { source = next },
-      onChange: () => {
-        // Abort in-flight runs so none commits output built from the settings
-        // snapshot captured at its start.
-        gate.cancelAll()
-        if (source().suggestionCount === 0) {
-          void store.clearAll().catch((error: unknown) => {
-            if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
-          })
-        }
-      },
+      onChange: applySettingsChange,
     })
   }
 
@@ -305,14 +310,17 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     () => source(),
     async patch => {
       const settings = ctx.get('settings')
+      const next = { ...source(), ...patch }
       if (settings === undefined) {
-        const prev = source()
-        source = () => ({ ...prev, ...patch })
-        return source()
+        // No settings service means no onChange will fire, so the invalidation
+        // that path normally provides has to be applied here instead. Without
+        // it a patch to `suggestionCount: 0` stops new runs but lets an
+        // in-flight one commit and republish stale suggestions.
+        source = () => next
+        applySettingsChange()
+      } else {
+        await settings.update(SETTINGS_NAMESPACE, next)
       }
-      const prev = source()
-      const next = { ...prev, ...patch }
-      await settings.update(SETTINGS_NAMESPACE, next)
       return source()
     },
     generateFn,

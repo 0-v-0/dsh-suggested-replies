@@ -1,5 +1,6 @@
 /**
- * Settings section for the suggested-replies master switch and editable config.
+ * Settings section for the suggested-replies editable config. There is no
+ * master switch: `suggestionCount: 0` is the only way to turn generation off.
  *
  * @module @anionex/dsh-suggested-replies/client/SuggestedRepliesSection
  */

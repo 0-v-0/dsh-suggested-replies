@@ -1,6 +1,6 @@
 # dsh-suggested-replies
 
-DSH Web 的“预测回复”插件：AI 回复结束后，生成几条用户下一步可能会发送的消息候选，并将它们显示在**聊天输入框上方**。点击候选只会将文本填入输入框，**不会自动发送**。
+DSH Web 的“预测回复”插件：AI 回复结束后，生成几条用户下一步可能会发送的消息候选，并在该条回复的操作行提供一个紧凑入口。点击候选只会将文本填入输入框，**不会自动发送**。
 
 ![候选气泡位于输入框上方](docs/suggested-replies-layout.svg)
 
@@ -11,13 +11,13 @@ AI 完成本轮回复
   -> 插件创建一个只使用官方事件的内部 Agent Session
   -> 内部 Agent 以零工具、完整 persona 根据近期对话生成候选
   -> flush 并归档内部 Session，把 UI 状态写入插件自有 storage-domain sidecar
-  -> Web 在 conversation.input.dock（输入框上方）显示气泡
+  -> Web 在该条 AI 回复的操作行显示紧凑切换按钮，展开后在按钮上方弹出候选下拉框
   -> 点击候选：inputActions.setDraft(text)
   -> 用户自行编辑或点击发送
 ```
 
 - **正确位置**：注册 `conversation.input.dock`，位于 DSH 的消息输入卡片上方；不会放到输入框下方的 `conversation.composer.dock`。
-- **单行展示**：候选始终保持在一条横线上；宽度不足时横向滚动查看，不换到第二行。
+- **展示位置**：按钮内联在消息操作行中（28×28，与其它操作按钮一致），展开后以绝对定位在按钮**上方**弹出下拉框，不挤压相邻布局；内容超出时下拉框内部滚动。`displayMode: all` 时每条 AI 回复都显示该按钮，点击较早回复的候选会分叉会话并把文本写入新会话草稿，而不是直接填入当前草稿。`conversation.input.dock` 仍按约定注册在输入框上方，承载一个隐藏组件用来取得 `setDraft`。
 - **只填入草稿**：点击候选会替换当前草稿为该候选，不会调用发送动作。
 - **候选内容**：优先覆盖合理的下一步执行、验证/追问、或决策/选择；候选跟随最近对话语言，彼此去重且可直接发送。
 - **失败兜底**：辅助模型没有返回规定 JSON 时，插件仍按最近对话语言生成配置数量的保守候选，不再把空数组当成成功结果隐藏整行。
@@ -45,14 +45,13 @@ dsh plugin --profile web add /absolute/path/to/dsh-suggested-replies
 
 ## 设置与配置
 
-Web 设置页中的“下一步建议”分区提供 `enabled` 总开关。它写入 `$DSH_HOME/settings.yaml` 的 `suggested-replies` 区域，下一轮立即生效。
+Web 设置页中的“下一步建议”分区提供候选数量、模型选项与各过滤开关。它写入 `$DSH_HOME/settings.yaml` 的 `suggested-replies` 区域，下一轮立即生效。**没有单独的总开关**：把 `suggestionCount` 设为 `0` 即关闭生成。
 
 其余部署参数在 `cordis.patch.yml` 或 profile overlay 中配置：
 
 | 字段 | 默认值 | 说明 |
 | --- | ---: | --- |
-| `enabled` | `true` | 是否生成候选；关闭后无辅助模型调用。 |
-| `suggestionCount` | `3` | 每轮候选数量，范围 `2-4`。 |
+| `suggestionCount` | `3` | 每轮候选数量，范围 `0-6`；`0` 关闭生成。 |
 | `contextMessageCount` | `4` | 传给辅助模型的最近可见消息数，范围 `2-6`。 |
 | `maxSuggestionChars` | `160` | 单条候选保留的最大字符数，范围 `32-300`。 |
 | `maxTokens` | `384` | 辅助调用的最大输出 token，范围 `64-1024`。 |
