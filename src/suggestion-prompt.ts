@@ -5,6 +5,7 @@
  */
 
 import type { Message } from '@deepseek-ai/dsh-llm'
+import { hasCJK, truncateToCodePoints } from './sanitize.ts'
 import type { SuggestedReply } from './types.ts'
 
 /** Runtime-controlled limits that affect prompt wording and response parsing. */
@@ -60,17 +61,22 @@ export function buildSuggestedRepliesUserPrompt(messages: readonly Message[]): s
 }
 
 /**
- * Parse one model response into the configured number of candidate messages.
+ * Parse one model response into candidate messages.
+ *
  * A single outer Markdown code fence is accepted defensively, but every other
- * non-JSON response is rejected.
+ * non-JSON response is rejected. The candidate count is a ceiling rather than
+ * an exact match: a model that returns two valid candidates when three were
+ * requested still yields two bubbles, which is better than discarding a real
+ * response in favour of the generic fallback pool.
  * @param raw - model text accumulated from the stream.
  * @param limits - resolved output cardinality and per-candidate text bound.
- * @returns ready candidates, or `null` when the response does not meet the format.
+ * @returns ready candidates, or `null` when the response is unusable.
  */
 export function parseSuggestedReplies(
   raw: string,
   limits: SuggestionOutputLimits,
 ): SuggestedReply[] | null {
+  if (limits.suggestionCount <= 0 || limits.maxSuggestionChars <= 0) return null
   const stripped = stripCodeFence(raw.trim())
   if (stripped === '') return null
 
@@ -83,23 +89,40 @@ export function parseSuggestedReplies(
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
 
   const suggestions = (parsed as { suggestions?: unknown }).suggestions
-  if (!Array.isArray(suggestions) || suggestions.length !== limits.suggestionCount) return null
+  if (!Array.isArray(suggestions) || suggestions.length === 0) return null
 
   const output: SuggestedReply[] = []
   const seen = new Set<string>()
-  for (const suggestion of suggestions) {
+  for (const suggestion of suggestions.slice(0, limits.suggestionCount)) {
     if (typeof suggestion !== 'string') return null
-    const normalized = normalizeCandidate(suggestion)
-    if (normalized === '') return null
-    const bounded = normalized.slice(0, limits.maxSuggestionChars).trim()
+    const bounded = truncateToCodePoints(normalizeCandidate(suggestion), limits.maxSuggestionChars).trim()
     if (bounded === '') return null
     const identity = bounded.toLowerCase()
     if (seen.has(identity)) return null
     seen.add(identity)
     output.push(bounded)
   }
-  return output
+  return output.length > 0 ? output : null
 }
+
+/** Deterministic fallback pool, one entry per supported slot count. */
+const FALLBACK_EN = [
+  'Continue',
+  'Could you explain that in more detail?',
+  'Can you give me a concrete example?',
+  'What should I do next?',
+  'Please show me the trade-offs',
+  'Are there any risks I should know about?',
+] as const
+
+const FALLBACK_ZH = [
+  '继续',
+  '请详细说明一下',
+  '给我一个具体例子',
+  '接下来建议做什么？',
+  '有哪些需要权衡的地方？',
+  '有什么风险需要注意吗？',
+] as const
 
 /**
  * Produce a bounded deterministic fallback when the auxiliary model does not
@@ -110,11 +133,9 @@ export function fallbackSuggestedReplies(
   conversation: string,
   limits: SuggestionOutputLimits,
 ): SuggestedReply[] {
-  const candidates = /[\u3400-\u9fff]/u.test(conversation)
-    ? ['继续', '请详细说明一下', '给我一个具体例子', '接下来建议做什么？']
-    : ['Continue', 'Could you explain that in more detail?', 'Can you give me a concrete example?', 'What should I do next?']
+  const candidates = hasCJK(conversation) ? FALLBACK_ZH : FALLBACK_EN
   return candidates.slice(0, limits.suggestionCount).map((candidate) =>
-    normalizeCandidate(candidate).slice(0, limits.maxSuggestionChars).trim() as SuggestedReply)
+    truncateToCodePoints(normalizeCandidate(candidate), limits.maxSuggestionChars).trim() as SuggestedReply)
 }
 
 /** Flatten text blocks only; tool calls, tool results, images, and reasoning stay out of the prompt. */

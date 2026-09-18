@@ -15,7 +15,7 @@ export interface SuggestedRepliesSettings {
     reasoningEffort: ReasoningEffort;
     /** Mask API keys and tokens in the transcript before sending to the model. */
     redactSecrets: boolean;
-    /** Remove escape sequences, control characters, and bidi override marks. */
+    /** Remove control characters and invisible format marks from candidate suggestions. */
     stripControls: boolean;
     /** Ensure each suggestion is a single line with no embedded newlines. */
     singleLine: boolean;

@@ -42,9 +42,9 @@ export interface Config extends SuggestedRepliesSettings {
     maxContextContextBytes: number;
     /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
     redactSecrets: boolean;
-    /** Strip ANSI/OSC/CSI escape sequences from the transcript. */
+    /** Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. */
     stripEscapes: boolean;
-    /** Strip C0/C1 control chars, bidi override marks, and lone surrogates. */
+    /** Strip control chars, invisible format chars, and lone surrogates from candidate text. */
     stripControls: boolean;
     /** Strip code fences and surrounding paired quotes from model output. */
     stripFencesAndQuotes: boolean;

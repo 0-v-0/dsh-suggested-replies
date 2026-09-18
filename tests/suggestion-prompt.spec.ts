@@ -55,18 +55,47 @@ describe('parseSuggestedReplies', () => {
     expect(parseSuggestedReplies('```json\n{"suggestions":["a","b","c"]}\n```', limits)).toEqual(['a', 'b', 'c'])
   })
 
+  it('accepts fewer candidates than requested instead of discarding them', () => {
+    expect(parseSuggestedReplies(JSON.stringify({ suggestions: ['a', 'b'] }), limits)).toEqual(['a', 'b'])
+    expect(parseSuggestedReplies(JSON.stringify({ suggestions: ['a'] }), limits)).toEqual(['a'])
+  })
+
+  it('truncates to the requested count when the model overshoots', () => {
+    expect(parseSuggestedReplies(JSON.stringify({ suggestions: ['a', 'b', 'c', 'd', 'e'] }), limits))
+      .toEqual(['a', 'b', 'c'])
+  })
+
+  it('bounds candidates on code points without leaving a lone surrogate', () => {
+    // 10 ASCII characters plus one astral code point: the 10-code-point bound
+    // drops the emoji rather than cutting it in half.
+    const parsed = parseSuggestedReplies(
+      JSON.stringify({ suggestions: ['x'.repeat(10) + '💥', 'c', 'y'.repeat(20)] }),
+      { suggestionCount: 3, maxSuggestionChars: 10 },
+    )
+    if (!Array.isArray(parsed)) throw new Error('parseSuggestedReplies returned a non-array result')
+    expect(parsed).toEqual(['xxxxxxxxxx', 'c', 'yyyyyyyyyy'])
+    expect(parsed.join('')).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+  })
+
   it('normalizes whitespace and bounds candidates', () => {
     const result = parseSuggestedReplies(JSON.stringify({ suggestions: ['  a\n b  ', 'c', 'x'.repeat(20)] }), limits)
     expect(result).toEqual(['a b', 'c', 'xxxxxxxxxx'])
   })
 
   it.each([
-    '', 'not json', JSON.stringify({}), JSON.stringify({ suggestions: ['a', 'b'] }),
+    '', 'not json', JSON.stringify({}), JSON.stringify({ suggestions: [] }),
     JSON.stringify({ suggestions: ['a', 2, 'c'] }), JSON.stringify({ suggestions: ['a', ' ', 'c'] }),
     JSON.stringify({ suggestions: ['a', 'A', 'c'] }),
     JSON.stringify({ suggestions: ['abcdefghijk-1', 'abcdefghijk-2', 'c'] }),
   ])('rejects malformed response %s', raw => {
     expect(parseSuggestedReplies(raw, limits)).toBeNull()
+  })
+
+  it('rejects when generation is disabled or the bound is unusable', () => {
+    expect(parseSuggestedReplies(JSON.stringify({ suggestions: ['a', 'b', 'c'] }), { ...limits, suggestionCount: 0 }))
+      .toBeNull()
+    expect(parseSuggestedReplies(JSON.stringify({ suggestions: ['a'] }), { ...limits, maxSuggestionChars: 0 }))
+      .toBeNull()
   })
 })
 
@@ -75,5 +104,19 @@ describe('fallbackSuggestedReplies', () => {
     expect(fallbackSuggestedReplies('User: 你好', limits)).toEqual(['继续', '请详细说明一下', '给我一个具体例子'])
     expect(fallbackSuggestedReplies('User: Hello', { ...limits, suggestionCount: 2 }))
       .toEqual(['Continue', 'Could you'])
+  })
+
+  it('covers the full configurable candidate range', () => {
+    const max = { suggestionCount: 6, maxSuggestionChars: 300 }
+    const en = fallbackSuggestedReplies('User: Hello', max)
+    const zh = fallbackSuggestedReplies('User: 你好', max)
+    expect(en).toHaveLength(6)
+    expect(zh).toHaveLength(6)
+    expect(new Set(en)).toHaveLength(6)
+    expect(new Set(zh)).toHaveLength(6)
+  })
+
+  it('bounds each fallback on code points', () => {
+    expect(fallbackSuggestedReplies('User: 你好', { suggestionCount: 6, maxSuggestionChars: 1 })).toHaveLength(6)
   })
 })

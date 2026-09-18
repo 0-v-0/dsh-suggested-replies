@@ -77,9 +77,9 @@ export interface Config extends SuggestedRepliesSettings {
   maxContextContextBytes: number
   /** Mask secrets (API keys, bearer tokens) in the transcript before sending to the model. */
   redactSecrets: boolean
-  /** Strip ANSI/OSC/CSI escape sequences from the transcript. */
+  /** Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. */
   stripEscapes: boolean
-  /** Strip C0/C1 control chars, bidi override marks, and lone surrogates. */
+  /** Strip control chars, invisible format chars, and lone surrogates from candidate text. */
   stripControls: boolean
   /** Strip code fences and surrounding paired quotes from model output. */
   stripFencesAndQuotes: boolean
@@ -136,8 +136,8 @@ export const Config = z.object({
   maxContextTurns: z.number().step(1).min(1).max(10).default(3).description('Number of conversation turns retained as context.'),
   maxContextContextBytes: z.number().step(1).min(1_024).max(65_536).default(16_384).description('Byte budget for retained context turns JSON.'),
   redactSecrets: z.boolean().default(true).description('Mask API keys and bearer tokens in transcripts before sending to the model.'),
-  stripEscapes: z.boolean().default(true).description('Strip ANSI/OSC/CSI escape sequences from transcripts.'),
-  stripControls: z.boolean().default(true).description('Strip C0/C1 control chars, bidi override marks, and lone surrogates.'),
+  stripEscapes: z.boolean().default(true).description('Strip ANSI/OSC/CSI escape sequences from model-generated candidate text. Transcripts are always stripped.'),
+  stripControls: z.boolean().default(true).description('Strip control chars, invisible format chars, and lone surrogates from candidate text. Transcripts are always stripped.'),
   stripFencesAndQuotes: z.boolean().default(true).description('Strip code fences and surrounding paired quotes from model output.'),
   collapseWhitespace: z.boolean().default(true).description('Collapse whitespace and force single-line output.'),
   singleLine: z.boolean().default(true).description('Force candidates to a single line with no embedded newlines.'),

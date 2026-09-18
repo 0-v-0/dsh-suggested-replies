@@ -60,11 +60,20 @@ export declare function deriveFilterOptions(config: GeneratePipelineConfig): Fil
 /**
  * Sanitize the conversation transcript before sending to the model.
  *
- * Applies secret redaction (when enabled) and truncates the result to
- * `maxTranscriptChars` so the framed prompt stays within the byte budget.
+ * The terminal-injection and invisible-character passes run unconditionally:
+ * the transcript is this plugin's outbound privacy boundary, so whether a user
+ * wants control characters stripped from their own suggestions must not decide
+ * what gets shipped to the auxiliary model. `stripEscapes` and `stripControls`
+ * therefore govern candidate cleaning only.
+ *
+ * Secret masking is opt-in because it rewrites user text. Both budgets are then
+ * applied on code point boundaries: the character budget keeps the transcript
+ * readable, while the UTF-8 byte budget is the binding limit for multi-byte
+ * text since a 60,000-character CJK transcript is ~180 KB. Redaction runs
+ * before budgeting so a label gets cut, never the raw secret.
  * @param text - raw transcript text.
- * @param config - pipeline configuration supplying toggle and character budget.
- * @returns the sanitized, truncated transcript.
+ * @param config - pipeline configuration supplying the redaction toggle and budgets.
+ * @returns the sanitized, budget-bounded transcript.
  */
 export declare function sanitizeTranscript(text: string, config: GeneratePipelineConfig): string;
 /**

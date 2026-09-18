@@ -29,12 +29,16 @@ export declare function buildSuggestionSystemPrompt(limits: SuggestionOutputLimi
  */
 export declare function buildSuggestedRepliesUserPrompt(messages: readonly Message[]): string | null;
 /**
- * Parse one model response into the configured number of candidate messages.
+ * Parse one model response into candidate messages.
+ *
  * A single outer Markdown code fence is accepted defensively, but every other
- * non-JSON response is rejected.
+ * non-JSON response is rejected. The candidate count is a ceiling rather than
+ * an exact match: a model that returns two valid candidates when three were
+ * requested still yields two bubbles, which is better than discarding a real
+ * response in favour of the generic fallback pool.
  * @param raw - model text accumulated from the stream.
  * @param limits - resolved output cardinality and per-candidate text bound.
- * @returns ready candidates, or `null` when the response does not meet the format.
+ * @returns ready candidates, or `null` when the response is unusable.
  */
 export declare function parseSuggestedReplies(raw: string, limits: SuggestionOutputLimits): SuggestedReply[] | null;
 /**

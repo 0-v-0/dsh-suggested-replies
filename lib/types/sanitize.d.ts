@@ -22,8 +22,6 @@ export interface CleanSuggestionOptions {
     readonly collapseWhitespace: boolean;
     /** Force the result to a single line by replacing newlines with spaces. */
     readonly singleLine: boolean;
-    /** Maximum retained characters for one candidate (applied after cleaning). */
-    readonly maxSuggestionChars: number;
 }
 /** Options controlling semantic filtering of cleaned model output. */
 export interface FilterOptions {
@@ -43,8 +41,6 @@ export interface FilterOptions {
     readonly allowSingleCommands: boolean;
     /** Filter residual formatting (newlines, asterisks). */
     readonly filterFormatting: boolean;
-    /** Maximum retained characters for one candidate. */
-    readonly maxSuggestionChars: number;
 }
 /**
  * Mask secret-shaped substrings so the auxiliary model never receives them.
@@ -53,6 +49,23 @@ export interface FilterOptions {
  * @returns the same text with every matched secret replaced by a label.
  */
 export declare function redactSecrets(text: string): string;
+/** Toggles for the escape/control passes shared by transcript and candidate. */
+export interface StripOptions {
+    /** Strip ANSI/OSC/CSI escape sequences. */
+    readonly stripEscapes: boolean;
+    /** Strip C0/C1 control chars, invisible format characters, and lone surrogates. */
+    readonly stripControls: boolean;
+}
+/**
+ * Apply the terminal-injection and invisible-character passes.
+ *
+ * Shared by the transcript path and the candidate path so the two can never
+ * diverge on which bytes are unsafe to ship to the model or to the composer.
+ * @param text - input text.
+ * @param options - which passes to apply.
+ * @returns the input with the selected unsafe characters removed.
+ */
+export declare function stripUnsafeCharacters(text: string, options: StripOptions): string;
 /**
  * Structurally clean one raw model output candidate into composer-safe text.
  *
@@ -64,6 +77,42 @@ export declare function redactSecrets(text: string): string;
  * @returns the cleaned text.
  */
 export declare function cleanSuggestion(text: string, options: CleanSuggestionOptions): string;
+/**
+ * Report whether `text` contains a CJK ideograph (Unified + Extension A).
+ *
+ * Exported so the word-count check and the fallback-language detection agree on
+ * what counts as CJK; two divergent ranges here misclassify CJK extension-A text.
+ * @param text - inspected text.
+ * @returns true when any code point falls in the CJK ideograph ranges.
+ */
+export declare function hasCJK(text: string): boolean;
+/**
+ * Compute the UTF-8 byte length of a string.
+ * @param text - the string to measure.
+ * @returns the number of UTF-8 bytes.
+ */
+export declare function byteLength(text: string): number;
+/**
+ * Truncate to at most `max` code points.
+ *
+ * `String.slice` counts UTF-16 code units, so cutting in the middle of an
+ * astral pair leaves a lone surrogate that reappears in the composer and in
+ * later model turns. This walks whole code points instead.
+ * @param text - input text.
+ * @param max - maximum retained code points.
+ * @returns the truncated text, with no lone surrogate at the cut.
+ */
+export declare function truncateToCodePoints(text: string, max: number): string;
+/**
+ * Truncate to at most `max` UTF-8 bytes, on a code point boundary.
+ *
+ * The auxiliary call has a byte budget that the character budget cannot express
+ * for multi-byte text; a 60,000-character CJK transcript is roughly 180 KB.
+ * @param text - input text.
+ * @param max - maximum retained UTF-8 bytes.
+ * @returns the truncated text, with no lone surrogate at the cut.
+ */
+export declare function truncateToUtf8Bytes(text: string, max: number): string;
 /**
  * Reject cleaned model output that is not a usable next prompt.
  *
