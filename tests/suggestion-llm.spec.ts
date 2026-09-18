@@ -1,4 +1,10 @@
-/** Tests for route selection, internal Agent composition, and result parsing. */
+/**
+ * Tests for route selection, internal Agent composition, and result parsing.
+ *
+ * The two value-imported peers are stubbed with their real behaviour:
+ * `createUserMessage` is an identity wrapper and `PERSONA_SECTION` carries the
+ * literal asserted below, so the mocks do not change any assertion in this file.
+ */
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Message } from '@deepseek-ai/dsh-llm'
@@ -11,6 +17,9 @@ import {
   resolveSuggestionRoute,
   type PreparedSuggestionRequest,
 } from '../src/suggestion-llm.ts'
+
+vi.mock('@deepseek-ai/dsh-llm', () => ({ createUserMessage: (message: unknown) => message }))
+vi.mock('@deepseek-ai/dsh-system-prompt', () => ({ PERSONA_SECTION: 'deployment:persona' }))
 
 /** Build a minimal parent Agent face for pure request preparation. */
 function parentAgent(options: {

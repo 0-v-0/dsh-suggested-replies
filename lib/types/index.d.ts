@@ -9,7 +9,7 @@ export declare const name = "dsh-suggested-replies";
 /** Required official extension points. */
 export declare const inject: string[];
 /** User-settings namespace used by the master enable switch. */
-export declare const SETTINGS_NAMESPACE: any;
+export declare const SETTINGS_NAMESPACE = "suggested-replies";
 /** Configurable runtime parameters for candidate generation. */
 export interface Config extends SuggestedRepliesSettings {
     /** Candidate messages requested from the auxiliary model. */

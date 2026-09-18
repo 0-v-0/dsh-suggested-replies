@@ -106,7 +106,7 @@ function ToggleRow({ label, desc, value, disabled, onChange }: {
 
 function ConfigGroup({ title, children }: {
   readonly title: string
-  readonly children: readonly React.ReactNode[]
+  readonly children: React.ReactNode
 }) {
   return (
     <div style={groupStyle}>
@@ -194,7 +194,7 @@ export function SuggestedRepliesSection({ rpc, t }: SuggestedRepliesSectionProps
             style={selectStyle}
             disabled={writing}
             value={config.reasoningEffort}
-            onChange={e => void patch({ reasoningEffort: e.target.value })}
+            onChange={e => void patch({ reasoningEffort: e.target.value === 'auto' ? 'auto' : 'off' })}
           >
             <option value="off">{t('settings.reasoningEffort.off')}</option>
             <option value="auto">{t('settings.reasoningEffort.auto')}</option>

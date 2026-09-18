@@ -71,7 +71,6 @@ export interface SuggestedRepliesStateSnapshot {
   /** Monotonic revision within the current Session lifecycle. */
   readonly revision: number
   /** Completed parent turn, or null before this lifecycle has stored state. */
-  /** Completed parent turn, or null before this lifecycle has stored state. */
   readonly turn: number | null
   /** MessageId of the last assistant message in the completed turn, or null. */
   readonly messageId: string | null
@@ -97,6 +96,28 @@ function sameIdentity(row: SuggestedRepliesRow, header: SessionHeader): boolean 
 function rowSnapshot(row: SuggestedRepliesRow): SuggestedRepliesRow {
   const suggestions = Object.freeze([...row.suggestions]) as unknown as string[]
   return Object.freeze({ ...row, session: Object.freeze({ ...row.session }), suggestions })
+}
+
+/** Fields that mark a row as "no suggestions" while keeping its message anchor. */
+function clearFields(current: SuggestedRepliesRow): {
+  revision: number
+  turn: number
+  messageId: string | null
+  phase: 'cleared'
+  suggestions: string[]
+} {
+  return {
+    revision: current.revision + 1,
+    turn: current.turn,
+    messageId: current.messageId,
+    phase: 'cleared',
+    suggestions: [],
+  }
+}
+
+/** Build the cleared replacement row addressed by one Session header. */
+function clearRow(header: SessionHeader, current: SuggestedRepliesRow): SuggestedRepliesRow {
+  return rowSnapshot({ session: identityOf(header), ...clearFields(current) })
 }
 
 function responseOf(header: SessionHeader, row: SuggestedRepliesRow | undefined): SuggestedRepliesStateSnapshot {
@@ -300,13 +321,7 @@ export class SuggestedRepliesStateStore {
     return await this.enqueue(session.id, async () => {
       const current = this.currentRow(session.header)
       if (current === undefined || current.phase === 'cleared') return false
-      await this.put(session.id, rowSnapshot({
-        session: identityOf(session.header),
-        revision: current.revision + 1,
-        turn: current.turn,
-        phase: 'cleared',
-        suggestions: [],
-      }))
+      await this.put(session.id, clearRow(session.header, current))
       return true
     })
   }
@@ -319,13 +334,7 @@ export class SuggestedRepliesStateStore {
     return await this.enqueue(session.id, async () => {
       const current = this.currentRow(session.header)
       if (current?.phase !== 'generating' || current.generationSessionId !== generationSessionId) return false
-      await this.put(session.id, rowSnapshot({
-        session: identityOf(session.header),
-        revision: current.revision + 1,
-        turn: current.turn,
-        phase: 'cleared',
-        suggestions: [],
-      }))
+      await this.put(session.id, clearRow(session.header, current))
       return true
     })
   }
@@ -338,10 +347,7 @@ export class SuggestedRepliesStateStore {
       if (current === undefined || current.phase === 'cleared') return
       await this.put(sessionId, rowSnapshot({
         session: current.session,
-        revision: current.revision + 1,
-        turn: current.turn,
-        phase: 'cleared',
-        suggestions: [],
+        ...clearFields(current),
       }))
     })))
   }
@@ -354,10 +360,7 @@ export class SuggestedRepliesStateStore {
       if (current?.phase !== 'generating') return
       await this.put(sessionId, rowSnapshot({
         session: current.session,
-        revision: current.revision + 1,
-        turn: current.turn,
-        phase: 'cleared',
-        suggestions: [],
+        ...clearFields(current),
       }))
     })))
   }

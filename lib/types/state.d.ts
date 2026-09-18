@@ -19,6 +19,7 @@ export declare const suggestedRepliesRowSchema: z.ZodObject<{
     }, z.core.$strip>;
     revision: z.ZodNumber;
     turn: z.ZodNumber;
+    messageId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
     phase: z.ZodUnion<readonly [z.ZodLiteral<"generating">, z.ZodLiteral<"ready">, z.ZodLiteral<"cleared">]>;
     suggestions: z.ZodArray<z.ZodString>;
     generationSessionId: z.ZodOptional<z.ZodString>;
@@ -26,23 +27,7 @@ export declare const suggestedRepliesRowSchema: z.ZodObject<{
 /** One persisted state row owned by this plugin. */
 export type SuggestedRepliesRow = z.infer<typeof suggestedRepliesRowSchema>;
 /** Plugin-owned state domain; parent Session logs contain no plugin event types. */
-export declare const suggestedRepliesStateDomainSpec: {
-    name: string;
-    version: number;
-    tables: {
-        sessions: import("@deepseek-ai/dsh-storage-domain").DomainTableSpec<SessionId, {
-            session: {
-                createdAt: number;
-                cwd?: string | undefined;
-            };
-            revision: number;
-            turn: number;
-            phase: "generating" | "ready" | "cleared";
-            suggestions: string[];
-            generationSessionId?: string | undefined;
-        }>;
-    };
-};
+export declare const suggestedRepliesStateDomainSpec: any;
 /** Client-facing state snapshot. */
 export interface SuggestedRepliesStateSnapshot {
     /** Header identity of the Session lifecycle represented by this snapshot. */
@@ -51,6 +36,8 @@ export interface SuggestedRepliesStateSnapshot {
     readonly revision: number;
     /** Completed parent turn, or null before this lifecycle has stored state. */
     readonly turn: number | null;
+    /** MessageId of the last assistant message in the completed turn, or null. */
+    readonly messageId: string | null;
     /** Current UI phase. */
     readonly phase: 'generating' | 'ready' | 'cleared';
     /** Ready candidates; empty in every other phase. */
@@ -67,8 +54,14 @@ export declare class SuggestedRepliesStateStore {
     private readonly lifecycle;
     private closing;
     private closeTask;
-    /** Open the plugin domain through the official storage-domain facility. */
+    /**
+     * Open the plugin domain through the official storage-domain facility.
+     * Falls back to an in-memory no-op store when the storage backend is
+     * unavailable, so the plugin never crashes the host profile.
+     */
     static open(ctx: Context): Promise<SuggestedRepliesStateStore>;
+    /** Build an in-memory store with no persistence, used when storage is unavailable. */
+    static inMemory(ctx: Context): SuggestedRepliesStateStore;
     /** Construct around one owned table; public for focused storage tests. */
     constructor(ctx: Context, table: KvTable<SessionId, SuggestedRepliesRow>, domain: Pick<Domain<typeof suggestedRepliesStateDomainSpec>, 'close'>);
     /** Read state only when the sidecar identity matches the addressed Session. */
@@ -76,9 +69,9 @@ export declare class SuggestedRepliesStateStore {
     /** Wait until the Session state revision differs, or until the request is aborted. */
     watch(sessionId: SessionId, observedLifecycle: SuggestedRepliesSessionIdentity, observedRevision: number, signal: AbortSignal): Promise<SuggestedRepliesStateSnapshot>;
     /** Publish loading state after the parent turn is durably checkpointed. */
-    setGenerating(session: Session, turn: number, generationSessionId: SessionId, isCurrent: CurrentPredicate): Promise<boolean>;
+    setGenerating(session: Session, turn: number, messageId: string | null, generationSessionId: SessionId, isCurrent: CurrentPredicate): Promise<boolean>;
     /** Commit candidates only over the exact generation row that produced them. */
-    setReady(session: Session, turn: number, generationSessionId: SessionId, suggestions: readonly SuggestedReply[], isCurrent: CurrentPredicate): Promise<boolean>;
+    setReady(session: Session, turn: number, messageId: string | null, generationSessionId: SessionId, suggestions: readonly SuggestedReply[], isCurrent: CurrentPredicate): Promise<boolean>;
     /** Clear one current row, optionally checkpointing a new parent Session fact first. */
     clear(session: Session, flushSession: boolean): Promise<boolean>;
     /** Clear only if no newer generation has replaced the expected row. */

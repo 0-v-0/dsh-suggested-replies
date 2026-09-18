@@ -9,6 +9,9 @@ export type SuggestionOrigin = 'auto' | 'manual'
 /** Reasoning effort override for the auxiliary model call. */
 export type ReasoningEffort = 'off' | 'auto'
 
+/** Upper bound on candidates per turn; shared by the host schema and the settings UI. */
+export const MAX_SUGGESTION_COUNT = 6
+
 /** User-editable settings stored under the `suggested-replies` namespace. */
 export interface SuggestedRepliesSettings {
   /** Number of candidate messages per turn; 0 disables generation. */

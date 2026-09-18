@@ -159,21 +159,33 @@ export const Config = z.object({
   excludeNonHumanEvents: z.boolean().default(true).description('Exclude non-human events from transcripts.'),
 }) as unknown as z<Config>
 
-/** Settings schema exposes all user-editable fields (no master switch). */
-const SettingsSchema = z.object({
-  reasoningEffort: z.union([z.const('off'), z.const('auto')]).default('off').description('Reasoning effort override.'),
-  suggestionCount: z.number().step(1).min(0).max(6).default(3).description('Number of candidate replies per turn. 0 disables generation.'),
-  redactSecrets: z.boolean().default(true).description('Mask API keys and tokens in transcripts.'),
-  stripControls: z.boolean().default(true).description('Strip control characters from output.'),
-  singleLine: z.boolean().default(true).description('Force single-line output.'),
-  filterMetaText: z.boolean().default(true).description('Filter meta-text.'),
-  filterEvaluative: z.boolean().default(true).description('Filter evaluative phrases.'),
-  filterAssistantVoice: z.boolean().default(true).description('Filter assistant-voice phrases.'),
-  filterTooLong: z.boolean().default(true).description('Filter overly long suggestions.'),
-  manualShortcut: z.string().default('Mod+Shift+Space').description('Keyboard shortcut for manual trigger.'),
-  manualReplacesDraft: z.boolean().default(true).description('Manual trigger writes directly to draft.'),
-  displayMode: z.union([z.const('latest'), z.const('all')]).default('latest').description('Where to show suggestion toggles.'),
-}) as unknown as z<SuggestedRepliesSettings>
+/** Keys of the user-editable subset of `Config` exposed through the settings section. */
+const SETTINGS_KEYS = [
+  'suggestionCount', 'reasoningEffort', 'redactSecrets', 'stripControls', 'singleLine',
+  'filterMetaText', 'filterEvaluative', 'filterAssistantVoice', 'filterTooLong',
+  'manualShortcut', 'manualReplacesDraft', 'displayMode',
+] as const
+
+/** Settings schema exposes the user-editable fields (no master switch). */
+const SettingsSchema = Config.pick(SETTINGS_KEYS) as unknown as z<SuggestedRepliesSettings>
+
+/** Project the full plugin config onto the user-editable settings surface. */
+function pickSettings(value: SuggestedRepliesSettings): SuggestedRepliesSettings {
+  return {
+    suggestionCount: value.suggestionCount,
+    reasoningEffort: value.reasoningEffort,
+    redactSecrets: value.redactSecrets,
+    stripControls: value.stripControls,
+    singleLine: value.singleLine,
+    filterMetaText: value.filterMetaText,
+    filterEvaluative: value.filterEvaluative,
+    filterAssistantVoice: value.filterAssistantVoice,
+    filterTooLong: value.filterTooLong,
+    manualShortcut: value.manualShortcut,
+    manualReplacesDraft: value.manualReplacesDraft,
+    displayMode: value.displayMode,
+  }
+}
 
 /** Install durable state, internal Agent generation, cancellation, and Web RPC. */
 export async function apply(ctx: Context, config: Config): Promise<() => Promise<void>> {
@@ -184,20 +196,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   const collapsedSessions = new Set<string>()
   /** Pending drafts for forked sessions: child sessionId → draft text. */
   const pendingDrafts = new Map<string, string>()
-  let source: () => SuggestedRepliesSettings = () => ({
-    reasoningEffort: config.reasoningEffort,
-    suggestionCount: config.suggestionCount,
-    redactSecrets: config.redactSecrets,
-    stripControls: config.stripControls,
-    singleLine: config.singleLine,
-    filterMetaText: config.filterMetaText,
-    filterEvaluative: config.filterEvaluative,
-    filterAssistantVoice: config.filterAssistantVoice,
-    filterTooLong: config.filterTooLong,
-    manualShortcut: config.manualShortcut,
-    manualReplacesDraft: config.manualReplacesDraft,
-    displayMode: config.displayMode,
-  })
+  let source: () => SuggestedRepliesSettings = () => pickSettings(config)
   let disposing = false
 
   const cancelSession = (agent: Agent, flushSession: boolean): void => {
@@ -208,18 +207,16 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     })
   }
 
-  const clearAll = async (): Promise<void> => {
-    gate.cancelAll()
-    await store.clearAll()
-  }
-
   const settingsService = ctx.get('settings')
   if (settingsService !== undefined) {
     settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, source(), {
       setSource: next => { source = next },
       onChange: () => {
+        // Abort in-flight runs so none commits output built from the settings
+        // snapshot captured at its start.
+        gate.cancelAll()
         if (source().suggestionCount === 0) {
-          void clearAll().catch((error: unknown) => {
+          void store.clearAll().catch((error: unknown) => {
             if (!disposing) ctx.logger.warn(`dsh-suggested-replies: failed to clear sidecar state: ${String(error)}`)
           })
         }
@@ -316,7 +313,9 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
 
   ctx.on('agent/disposed', ({ agent }) => {
     if (internalSessions.has(String(agent.id))) return
-    gate.cancel(String(agent.id))
+    // Skip the durability flush: the parent Session log may already be gone,
+    // and a stuck loading row must not outlive a disposed agent.
+    cancelSession(agent, false)
   })
 
   const generateFn = async (sessionId: string, turn?: number): Promise<void> => {
@@ -336,23 +335,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   registerSuggestedRepliesRpc(
     ctx,
     store,
-    () => {
-      const s = source()
-      return {
-        suggestionCount: s.suggestionCount,
-        reasoningEffort: s.reasoningEffort,
-        redactSecrets: s.redactSecrets,
-        stripControls: s.stripControls,
-        singleLine: s.singleLine,
-        filterMetaText: s.filterMetaText,
-        filterEvaluative: s.filterEvaluative,
-        filterAssistantVoice: s.filterAssistantVoice,
-        filterTooLong: s.filterTooLong,
-        manualShortcut: s.manualShortcut,
-        manualReplacesDraft: s.manualReplacesDraft,
-        displayMode: s.displayMode,
-      }
-    },
+    () => source(),
     async patch => {
       const settings = ctx.get('settings')
       if (settings === undefined) {

@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { MAX_SUGGESTION_COUNT, type SuggestedRepliesSettings } from './types.ts'
 import type {
   SuggestedRepliesSessionIdentity,
   SuggestedRepliesStateSnapshot,
@@ -56,21 +57,17 @@ export interface GenerateResult {
   readonly ok: true
 }
 
-/** Client-facing config snapshot returned by `config.get` and `config.set`. */
-export interface ConfigResponse {
-  readonly suggestionCount: number
-  readonly reasoningEffort: string
-  readonly redactSecrets: boolean
-  readonly stripControls: boolean
-  readonly singleLine: boolean
-  readonly filterMetaText: boolean
-  readonly filterEvaluative: boolean
-  readonly filterAssistantVoice: boolean
-  readonly filterTooLong: boolean
-  readonly manualShortcut: string
-  readonly manualReplacesDraft: boolean
-  readonly displayMode: 'all' | 'latest'
-}
+/**
+ * Client-facing config snapshot returned by `config.get` and `config.set`.
+ * Derived from the settings contract so the two cannot drift; `reasoningEffort`
+ * is widened to `string` because the RPC boundary serializes the union.
+ */
+export type ConfigResponse =
+  & Omit<SuggestedRepliesSettings, 'reasoningEffort'>
+  & { readonly reasoningEffort: string }
+
+/** Payload accepted by `config.set`: a partial patch of the settings contract. */
+export type ConfigSetPayload = Partial<SuggestedRepliesSettings>
 
 /** Payload accepted by `draft.get`. */
 export interface DraftGetPayload {
@@ -98,21 +95,44 @@ export interface ForkResult {
   readonly sessionId: string
 }
 
+/** Settings keys that always carry a boolean value. */
+const CONFIG_BOOLEAN_KEYS = [
+  'redactSecrets', 'stripControls', 'singleLine', 'filterMetaText',
+  'filterEvaluative', 'filterAssistantVoice', 'filterTooLong', 'manualReplacesDraft',
+] as const
 
-/** Payload accepted by `config.set`. */
-export interface ConfigSetPayload {
-  readonly reasoningEffort?: string
-  readonly suggestionCount?: number
-  readonly redactSecrets?: boolean
-  readonly stripControls?: boolean
-  readonly singleLine?: boolean
-  readonly filterMetaText?: boolean
-  readonly filterEvaluative?: boolean
-  readonly filterAssistantVoice?: boolean
-  readonly filterTooLong?: boolean
-  readonly manualShortcut?: string
-  readonly manualReplacesDraft?: boolean
-  readonly displayMode?: 'all' | 'latest'
+/**
+ * Validate and bounds-check a settings patch before it reaches host state.
+ * Unknown keys are rejected so an arbitrary object cannot be merged into settings.
+ * @param value - untrusted RPC payload.
+ * @returns whether the payload is a valid settings patch.
+ */
+export function isConfigSetPayload(value: unknown): value is ConfigSetPayload {
+  if (!isRecord(value)) return false
+  for (const [key, field] of Object.entries(value)) {
+    if (field === undefined) continue
+    if (CONFIG_BOOLEAN_KEYS.includes(key as (typeof CONFIG_BOOLEAN_KEYS)[number])) {
+      if (typeof field !== 'boolean') return false
+      continue
+    }
+    switch (key) {
+      case 'suggestionCount':
+        if (typeof field !== 'number' || !Number.isInteger(field) || field < 0 || field > MAX_SUGGESTION_COUNT) return false
+        break
+      case 'reasoningEffort':
+        if (field !== 'off' && field !== 'auto') return false
+        break
+      case 'displayMode':
+        if (field !== 'latest' && field !== 'all') return false
+        break
+      case 'manualShortcut':
+        if (typeof field !== 'string') return false
+        break
+      default:
+        return false
+    }
+  }
+  return true
 }
 
 function ok<T>(value: T): RpcResult<T> {
@@ -197,13 +217,17 @@ export function registerSuggestedRepliesRpc(
         if (!isStateGetPayload(payload)) return fail<DraftGetResult>('payload must be { sessionId: string }')
         return ok<DraftGetResult>({ draft: getDraftFn(payload.sessionId) })
       }
-      case 'config.get':
-        return ok<ConfigResponse>(getConfig())
-      case 'config.set': {
-        if (!isRecord(payload)) return fail<ConfigResponse>('payload must be a config object')
+      case 'config.get': {
         try {
-          const result = await setConfig(payload as ConfigSetPayload)
-          return ok<ConfigResponse>(result)
+          return ok<ConfigResponse>(getConfig())
+        } catch (error) {
+          return fail<ConfigResponse>(error instanceof Error ? error.message : String(error))
+        }
+      }
+      case 'config.set': {
+        if (!isConfigSetPayload(payload)) return fail<ConfigResponse>('payload must be a settings patch')
+        try {
+          return ok<ConfigResponse>(await setConfig(payload))
         } catch (error) {
           return fail<ConfigResponse>(error instanceof Error ? error.message : String(error))
         }
@@ -218,25 +242,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function isDockSetCollapsedPayload(value: unknown): value is DockSetCollapsedPayload {
-  return isRecord(value)
-    && typeof value.sessionId === 'string'
-    && value.sessionId.length > 0
-    && typeof value.collapsed === 'boolean'
-}
-
-function isStateGetPayload(value: unknown): value is StateGetPayload {
+/** Payload guard shared by every endpoint addressed by one non-empty session id. */
+function hasSessionId(value: unknown): value is StateGetPayload {
   return isRecord(value) && typeof value.sessionId === 'string' && value.sessionId.length > 0
 }
 
+function isDockSetCollapsedPayload(value: unknown): value is DockSetCollapsedPayload {
+  if (!hasSessionId(value)) return false
+  return typeof (value as DockSetCollapsedPayload).collapsed === 'boolean'
+}
+
+function isStateGetPayload(value: unknown): value is StateGetPayload {
+  return hasSessionId(value)
+}
+
 function isStateWatchPayload(value: unknown): value is StateWatchPayload {
-  return isRecord(value)
-    && typeof value.sessionId === 'string'
-    && value.sessionId.length > 0
-    && isSessionIdentity(value.lifecycle)
-    && typeof value.revision === 'number'
-    && Number.isSafeInteger(value.revision)
-    && value.revision >= 0
+  if (!hasSessionId(value)) return false
+  const payload = value as StateWatchPayload
+  return isSessionIdentity(payload.lifecycle)
+    && typeof payload.revision === 'number'
+    && Number.isSafeInteger(payload.revision)
+    && payload.revision >= 0
 }
 
 function isSessionIdentity(value: unknown): value is SuggestedRepliesSessionIdentity {
@@ -248,17 +274,18 @@ function isSessionIdentity(value: unknown): value is SuggestedRepliesSessionIden
 }
 
 function isGeneratePayload(value: unknown): value is GeneratePayload {
-  if (!isRecord(value) || typeof value.sessionId !== 'string' || value.sessionId.length === 0) return false
-  return value.turn === undefined || (typeof value.turn === 'number' && Number.isSafeInteger(value.turn) && value.turn >= 0)
+  if (!hasSessionId(value)) return false
+  const payload = value as GeneratePayload
+  return payload.turn === undefined
+    || (typeof payload.turn === 'number' && Number.isSafeInteger(payload.turn) && payload.turn >= 0)
 }
 
 function isDismissPayload(value: unknown): value is DismissPayload {
-  return isRecord(value) && typeof value.sessionId === 'string' && value.sessionId.length > 0
+  return hasSessionId(value)
 }
 
 function isForkPayload(value: unknown): value is ForkPayload {
-  return isRecord(value)
-    && typeof value.sessionId === 'string' && value.sessionId.length > 0
-    && typeof value.messageId === 'string' && value.messageId.length > 0
-    && typeof value.draft === 'string'
+  if (!hasSessionId(value)) return false
+  const payload = value as ForkPayload
+  return typeof payload.messageId === 'string' && payload.messageId.length > 0 && typeof payload.draft === 'string'
 }

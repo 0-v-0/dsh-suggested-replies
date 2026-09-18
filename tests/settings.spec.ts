@@ -1,12 +1,21 @@
-/** Tests for the suggested-replies RPC endpoints. */
+/**
+ * Tests for the suggested-replies RPC endpoints.
+ *
+ * `SessionId` is a host-injected peer import, so it is stubbed before the
+ * module under test is loaded. The real package resolves to the same value
+ * for plain session ids, so the stub does not change any assertion below.
+ */
 import { describe, expect, it, vi } from 'vitest'
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 import {
   CHANNEL,
+  isConfigSetPayload,
   registerSuggestedRepliesRpc,
   type ConfigResponse,
   type SuggestedRepliesStateResponse,
 } from '../src/rpc.ts'
+
+vi.mock('@deepseek-ai/dsh-session', () => ({ SessionId: (value: string) => value }))
 
 type RpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<RpcResult<unknown>>
 
@@ -138,5 +147,43 @@ describe('registerSuggestedRepliesRpc', () => {
     const { ctx, handler } = makeCtxStub()
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
     expect(await handler()(endpoint, payload, signal)).toMatchObject({ ok: false, error: { code: 'internal' } })
+  })
+
+  it('surfaces a config.get failure as an error result', async () => {
+    const { ctx, handler } = makeCtxStub()
+    const failingGetConfig = (): ConfigResponse => { throw new Error('settings unavailable') }
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, failingGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
+    expect(await handler()('config.get', {}, signal)).toMatchObject({ ok: false, error: { message: 'settings unavailable' } })
+  })
+
+  it.each([
+    { suggestionCount: 7 },
+    { suggestionCount: -1 },
+    { suggestionCount: 2.5 },
+    { suggestionCount: '3' },
+    { reasoningEffort: 'high' },
+    { displayMode: 'everywhere' },
+    { redactSecrets: 'yes' },
+    { manualShortcut: 42 },
+    { suggestionCount: 3, unknownKey: true },
+    null,
+  ])('rejects an out-of-contract settings patch %j without calling the writer', async payload => {
+    const { ctx, handler } = makeCtxStub()
+    const setConfig = vi.fn(async (): Promise<ConfigResponse> => defaultConfig)
+    registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
+
+    expect(await handler()('config.set', payload, signal)).toMatchObject({ ok: false, error: { code: 'internal' } })
+    expect(setConfig).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { suggestionCount: 0 },
+    { suggestionCount: 6, reasoningEffort: 'auto', displayMode: 'all' },
+    { redactSecrets: false, filterTooLong: false },
+    { manualShortcut: 'Mod+Shift+Space' },
+    { suggestionCount: undefined },
+    {},
+  ])('accepts an in-contract settings patch %j', payload => {
+    expect(isConfigSetPayload(payload)).toBe(true)
   })
 })

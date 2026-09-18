@@ -77,7 +77,7 @@ export interface PreparedSuggestionRequest {
     readonly skippedCycle?: readonly string[];
 }
 /** Select the trailing model-visible conversation messages from a Session. */
-export declare function deriveRecentMessages(agent: Agent, contextMessageCount: number): import("@deepseek-ai/dsh-llm").Message[];
+export declare function deriveRecentMessages(agent: Agent, contextMessageCount: number): any;
 /** Resolve the latest logged route, falling back to the Agent creation route. */
 export declare function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | null;
 /** Validate and normalize an optional explicit auxiliary route. */
@@ -85,6 +85,10 @@ export declare function resolveConfiguredSuggestionRoute(provider: string | unde
 /** Prepare one internal Agent request when the completed turn has usable text and routing. */
 export declare function prepareSuggestionRequest(agent: Agent, config: SuggestionGenerationConfig, turn: number, signal: AbortSignal): PreparedSuggestionRequest | null;
 export declare function getSessionEvents(session: Session): readonly SessionEvent[];
+/** Derive the messageId of the last assistant message in a completed turn. */
+export declare function lastAssistantMessageIdForTurn(agent: Agent, turn: number): string | null;
+/** Find the event seq of the assistant message with the given messageId. */
+export declare function seqForMessageId(agent: Agent, messageId: string): number | null;
 /** Extract the last non-empty assistant text produced inside one owned run interval. */
 export declare function extractSuggestionText(events: readonly SessionEvent[], firstSeq: number): string | null;
 /**
