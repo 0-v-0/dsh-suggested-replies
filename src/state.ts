@@ -10,6 +10,16 @@ import type { SuggestedReply } from './types.ts'
 
 const nonNegativeSafeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 
+/**
+ * Idle budget of one `state.watch` long-poll: the server answers with the
+ * current snapshot after this long without a state change. Short enough that
+ * a row-heavy conversation (a git-workspace session) never pins the
+ * browser's per-host HTTP/1.1 connection pool, long enough that a burst of
+ * state changes still coalesces into one round trip. The client re-subscribes
+ * in its watch loop, so this is a liveness lease, not a semantics change.
+ */
+const WATCH_IDLE_TIMEOUT_MS = 4_000
+
 /** Session header fields that fence one sidecar row to one log lifecycle. */
 export const suggestedRepliesSessionIdentitySchema = z.object({
   createdAt: nonNegativeSafeInteger,
@@ -245,6 +255,7 @@ export class SuggestedRepliesStateStore {
         this.waiters.set(sessionId, listeners)
 
         const cleanup = (): void => {
+          clearTimeout(idleTimer)
           listeners.delete(onChanged)
           if (listeners.size === 0) this.waiters.delete(sessionId)
           combined.removeEventListener('abort', onAbort)
@@ -258,6 +269,12 @@ export class SuggestedRepliesStateStore {
         }
         const onChanged = (): void => { finish() }
         const onAbort = (): void => { finish(abortReason(combined)) }
+        // No state change may pin a watch request forever: one long-poll per
+        // message row eats the browser's per-host HTTP/1.1 connection pool
+        // (6 slots) and starves unrelated RPCs (the observed "new session
+        // button dead" was exactly this). Answer with the current snapshot
+        // after an idle budget; the client re-subscribes in its watch loop.
+        const idleTimer = setTimeout(finish, WATCH_IDLE_TIMEOUT_MS)
         listeners.add(onChanged)
         combined.addEventListener('abort', onAbort, { once: true })
 

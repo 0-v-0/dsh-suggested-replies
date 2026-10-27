@@ -65,11 +65,84 @@ const STYLE_TAG_ID = 'dsh-suggested-replies-style'
 const COLLAPSE_KEY = 'dsh-suggested-replies-collapsed'
 /** Auto-generations permitted per message while the dropdown is open. */
 const MAX_LAZY_ATTEMPTS = 1
-/** Consecutive sidecar-state subscription failures before re-arming is abandoned. */
-const MAX_STATE_RECONNECTS = 5
 /** Delay before retrying a failed sidecar-state subscription. */
 const STATE_RECONNECT_DELAY_MS = 1000
 let styleUsers = 0
+
+/**
+ * One watch loop per Session, shared by every message-row instance. Each row
+ * used to run its own `state.watch` long-poll, so a row-heavy conversation
+ * (a git-workspace session) pinned the browser's per-host HTTP/1.1 connection
+ * pool (6 slots) and starved unrelated RPCs — the observed dead "new session"
+ * button. The server leases every watch for `WATCH_IDLE_TIMEOUT_MS`; here we
+ * also coalesce all rows of one session into a single subscription.
+ */
+interface SessionWatch {
+  /** Alive row components holding this session's watch. */
+  refs: number
+  controller: AbortController
+  /** Latest snapshot per row messageId ('' for a cleared/null id). */
+  values: Map<string, SuggestedRepliesStateResponse>
+  listeners: Set<(messageId: string, value: SuggestedRepliesStateResponse) => void>
+}
+const sessionWatches = new Map<string, SessionWatch>()
+
+function acquireSessionWatch(rpc: ClientConnectionRpc, sessionId: string): SessionWatch {
+  const existing = sessionWatches.get(sessionId)
+  if (existing !== undefined) {
+    existing.refs += 1
+    return existing
+  }
+  const controller = new AbortController()
+  const entry: SessionWatch = { refs: 1, controller, values: new Map(), listeners: new Set() }
+  sessionWatches.set(sessionId, entry)
+  const { signal } = controller
+  void (async () => {
+    let current: SuggestedRepliesStateResponse | undefined
+    while (!signal.aborted) {
+      try {
+        if (current === undefined) {
+          const initial = await rpc.call(
+            '/suggested-replies', 'state.get', { sessionId }, signal,
+          ) as StateResult
+          if (signal.aborted) return
+          if (!initial.ok) throw new Error(initial.error.message)
+          current = initial.value as SuggestedRepliesStateResponse
+        } else {
+          const watched = await rpc.call(
+            '/suggested-replies', 'state.watch',
+            { sessionId, lifecycle: current.lifecycle, revision: current.revision },
+            signal,
+          ) as StateResult
+          if (signal.aborted) return
+          if (!watched.ok) throw new Error(watched.error.message)
+          current = watched.value as SuggestedRepliesStateResponse
+          void refreshDisplayMode(rpc)
+        }
+        const key = current.messageId ?? ''
+        entry.values.set(key, current)
+        for (const fn of entry.listeners) fn(key, current)
+      } catch {
+        if (signal.aborted) return
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(resolve, STATE_RECONNECT_DELAY_MS)
+          signal.addEventListener('abort', () => resolve(), { once: true })
+          void timer
+        })
+      }
+    }
+  })()
+  return entry
+}
+
+function releaseSessionWatch(sessionId: string): void {
+  const entry = sessionWatches.get(sessionId)
+  if (entry === undefined) return
+  entry.refs -= 1
+  if (entry.refs > 0) return
+  entry.controller.abort()
+  sessionWatches.delete(sessionId)
+}
 
 const CSS_TEXT = `
 .dsh-sr-wrap {
@@ -229,73 +302,20 @@ export function SuggestionActions({ rpc, messageId, sessionId, t }: SuggestionAc
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [collapsed])
-  /** Consecutive sidecar-state subscription failures, reset by a successful one. */
-  const watchFailures = useRef(0)
-
   useEffect(() => {
-    const controller = new AbortController()
-    const { signal } = controller
-
-    const publish = (value: SuggestedRepliesStateResponse): void => {
-      if (!signal.aborted) setObserved({ messageId, value })
+    const entry = acquireSessionWatch(rpc, sessionId)
+    const onValue = (watchMessageId: string, value: SuggestedRepliesStateResponse): void => {
+      if (watchMessageId !== (messageId ?? '')) return
+      if (!entry.controller.signal.aborted) setObserved({ messageId, value })
     }
-    const clear = (): void => {
-      if (signal.aborted) return
-      setObserved(current => current?.messageId === messageId ? undefined : current)
-    }
-
-    let retryTimer: ReturnType<typeof setTimeout> | undefined
-
-    void (async () => {
-      let current: SuggestedRepliesStateResponse | undefined
-
-      // One failed RPC must not kill the subscription for the component's whole
-      // life: a dead watch would hide the toggle and leave the regenerate
-      // button with nowhere to publish. Back off and re-subscribe instead,
-      // giving up only after consecutive failures or on unmount.
-      while (!signal.aborted) {
-        try {
-          if (current === undefined) {
-            const initial = await rpc.call(
-              '/suggested-replies', 'state.get', { sessionId }, signal,
-            ) as StateResult
-            if (signal.aborted) return
-            if (!initial.ok) throw new Error(initial.error.message)
-            current = initial.value as SuggestedRepliesStateResponse
-            publish(current)
-          }
-          // A successful subscription resets the streak, so a connection that
-          // flaps but recovers keeps watching instead of hitting the cap.
-          watchFailures.current = 0
-          while (!signal.aborted) {
-            const watched = await rpc.call(
-              '/suggested-replies', 'state.watch',
-              { sessionId, lifecycle: current.lifecycle, revision: current.revision },
-              signal,
-            ) as StateResult
-            if (signal.aborted) return
-            if (!watched.ok) throw new Error(watched.error.message)
-            current = watched.value as SuggestedRepliesStateResponse
-            void refreshDisplayMode(rpc)
-            publish(current)
-          }
-        } catch {
-          if (signal.aborted) return
-          clear()
-          current = undefined
-          watchFailures.current += 1
-          if (watchFailures.current > MAX_STATE_RECONNECTS) return
-          await new Promise<void>(resolve => {
-            retryTimer = setTimeout(resolve, STATE_RECONNECT_DELAY_MS)
-            signal.addEventListener('abort', () => resolve(), { once: true })
-          })
-        }
-      }
-    })()
-
+    entry.listeners.add(onValue)
+    // Seed from a snapshot the shared loop already holds, so rows mounted
+    // after the first one never show an empty dropdown.
+    const seeded = entry.values.get(messageId ?? '')
+    if (seeded !== undefined) onValue(messageId ?? '', seeded)
     return () => {
-      if (retryTimer !== undefined) clearTimeout(retryTimer)
-      controller.abort()
+      entry.listeners.delete(onValue)
+      releaseSessionWatch(sessionId)
     }
   }, [rpc, sessionId, messageId])
 
