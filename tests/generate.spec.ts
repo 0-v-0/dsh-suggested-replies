@@ -1,6 +1,5 @@
 /** Tests for transcript framing, budget enforcement, and candidate processing. */
 import { describe, expect, it } from 'vitest'
-import { openaiApiKey } from './helpers/secrets.ts'
 import {
   processSuggestion,
   processSuggestions,
@@ -8,6 +7,7 @@ import {
   type GeneratePipelineConfig,
 } from '../src/generate.ts'
 import { byteLength } from '../src/sanitize.ts'
+import { openaiApiKey } from './helpers/secrets.ts'
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
 

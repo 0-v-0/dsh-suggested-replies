@@ -65,10 +65,12 @@ describe('redactSecrets', () => {
     expect(redactSecrets(githubToken('ghp'))).toBe('<github_token>')
     expect(redactSecrets(githubToken('gho'))).toBe('<github_token>')
     expect(redactSecrets(githubToken('ghs'))).toBe('<github_token>')
-    expect(redactSecrets('github_pat_11ABCDEFGHIJKLMNOPQRSTU')).toBe('<github_token>')
+    expect(redactSecrets(githubFineGrainedPat())).toBe('<github_token>')
   })
 
   it('masks Slack tokens', () => {
+    expect(redactSecrets(slackToken('xoxb'))).toBe('<slack_token>')
+    expect(redactSecrets(slackToken('xoxp'))).toBe('<slack_token>')
   })
 
   it('masks Bearer tokens', () => {
@@ -79,7 +81,7 @@ describe('redactSecrets', () => {
   it('masks the whole of a base64 Bearer token, not just its base64url half', () => {
     // Base64 (unlike base64url) uses `+` and `/`, so a value class that omits
     // them left the tail of the token in the transcript.
-    const token = 'eyJhbGciOiJIUzI1NiJ9.abc-/Q==.sig'
+    const token = base64BearerValue()
     const result = redactSecrets(`Authorization: Bearer ${token} end`)
     expect(result).toBe('Authorization: Bearer [REDACTED_SECRET] end')
     expect(result).not.toContain(token)
@@ -120,17 +122,8 @@ describe('redactSecrets', () => {
   })
 
   it('masks Stripe live and test keys', () => {
-    // Fixtures are generated at runtime: committing literal key-shaped strings
-    // trips GitHub push protection even for Stripe's documentation examples.
-    // Real keys are `sk_<env>_` followed by 24 alphanumeric characters.
-    const stripeKey = (env: 'live' | 'test'): string => {
-      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-      let body = ''
-      for (let i = 0; i < 24; i += 1) body += alphabet[Math.floor(Math.random() * alphabet.length)]
-      return `sk_${env}_${body}`
-    }
-    expect(redactSecrets(stripeKey('live'))).toBe('<stripe_key>')
-    expect(redactSecrets(stripeKey('test'))).toBe('<stripe_key>')
+    expect(redactSecrets(stripeSecretKey('live'))).toBe('<stripe_key>')
+    expect(redactSecrets(stripeSecretKey('test'))).toBe('<stripe_key>')
   })
 
   it('masks Google API keys at the real 39-character length', () => {
@@ -147,6 +140,7 @@ describe('redactSecrets', () => {
   })
 
   it('masks GitLab tokens', () => {
+    expect(redactSecrets(gitlabToken('glpat'))).toBe('<gitlab_token>')
     expect(redactSecrets(gitlabToken('glptt'))).toBe('<gitlab_token>')
   })
 
