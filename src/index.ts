@@ -6,6 +6,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -35,6 +36,7 @@ export const name = 'dsh-suggested-replies'
 export const inject = [
   'agents',
   'connection',
+  'webServer',
   'sessionPersistence',
   'sessions',
   'systemPrompt',
@@ -132,16 +134,6 @@ export const Config = z.object({
   displayMode: z.union([z.const('latest'), z.const('all')]).default('latest').description('Where to show suggestion toggles: latest assistant message only, or all assistant messages.'),
 }) as unknown as z<Config>
 
-/** Keys of the user-editable subset of `Config` exposed through the settings section. */
-const SETTINGS_KEYS = [
-  'suggestionCount', 'reasoningEffort', 'redactSecrets', 'stripControls', 'singleLine',
-  'filterMetaText', 'filterEvaluative', 'filterAssistantVoice', 'filterTooLong',
-  'manualShortcut', 'manualReplacesDraft', 'displayMode',
-] as const
-
-/** Settings schema exposes the user-editable fields (no master switch). */
-const SettingsSchema = Config.pick(SETTINGS_KEYS) as unknown as z<SuggestedRepliesSettings>
-
 /** Project the full plugin config onto the user-editable settings surface. */
 function pickSettings(value: SuggestedRepliesSettings): SuggestedRepliesSettings {
   return {
@@ -194,14 +186,6 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
     }
   }
 
-  const settingsService = ctx.get('settings')
-  if (settingsService !== undefined) {
-    settingsService.installSection(ctx, SETTINGS_NAMESPACE, SettingsSchema, source(), {
-      setSource: next => { source = next },
-      onChange: applySettingsChange,
-    })
-  }
-
   const suggestionRoute = resolveConfiguredSuggestionRoute(config.suggestionProvider, config.suggestionModel)
   const getGenerationConfig = (): SuggestionGenerationConfig => {
     const s = source()
@@ -235,7 +219,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
   const startGenerationForSession = (agent: Agent, turn: number): void => {
     if (source().suggestionCount === 0) return
     if (collapsedSessions.has(String(agent.id))) return
-    if (agent.inbox.hasPending) return
+    if (agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0) return
 
     const lease = gate.start(String(agent.id), config.timeoutMs)
     const request = prepareSuggestionRequest(agent, getGenerationConfig(), turn, lease.signal)
@@ -330,9 +314,9 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       if (agent === undefined) throw new Error(`dsh-suggested-replies: session ${sessionId} not found for fork`)
       const seq = seqForMessageId(agent, messageId)
       if (seq === null) throw new Error(`dsh-suggested-replies: messageId ${messageId} not found in session ${sessionId}`)
-      const childSession = await ctx.sessions.fork({ sessionId: SessionId(sessionId), atSeq: seq })
-      pendingDrafts.set(String(childSession), draft)
-      return String(childSession)
+      const childSession = await ctx.sessions.fork(agent.session, seq)
+      pendingDrafts.set(String(childSession.id), draft)
+      return String(childSession.id)
     },
     (sessionId: string, collapsed: boolean): void => {
       if (collapsed) {

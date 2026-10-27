@@ -2,9 +2,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { PERSONA_SECTION } from '@deepseek-ai/dsh-system-prompt'
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { Session, SessionEvent, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+const SUGGESTED_REPLIES_SECTION = 'suggested-replies:persona'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { ReasoningEffort, SuggestedRepliesRoute, SuggestedReply } from './types.ts'
@@ -20,6 +20,16 @@ import {
   sanitizeTranscript,
   type GeneratePipelineConfig,
 } from './generate.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** This plugin's internal auxiliary Agent input; consumers fall through unknown kinds. */
+    plugin: {
+      kind: 'plugin'
+      plugin: string
+    }
+  }
+}
 
 /**
  * Resolved runtime choices for one suggested-replies model request.
@@ -108,10 +118,7 @@ export function prepareSuggestionRequest(
 }
 
 export function getSessionEvents(session: Session): readonly SessionEvent[] {
-  if (typeof (session as any).snapshotEvents === 'function') {
-    return (session as any).snapshotEvents()
-  }
-  return session.events ?? []
+  return session.snapshotEvents()
 }
 
 function turnHasAssistantText(agent: Agent, turn: number): boolean {
@@ -133,7 +140,7 @@ export function lastAssistantMessageIdForTurn(agent: Agent, turn: number): strin
 }
 
 /** Find the event seq of the assistant message with the given messageId. */
-export function seqForMessageId(agent: Agent, messageId: string): number | null {
+export function seqForMessageId(agent: Agent, messageId: string): SessionSeq | null {
   const events = getSessionEvents(agent.session)
   for (const event of events) {
     if (event.type === 'assistant/message' && event.data.message.id === messageId) {
@@ -193,14 +200,14 @@ export async function generateSuggestedReplies(
         provider: request.route.provider,
         model: request.route.model,
         maxTokens: request.maxTokens,
-        ...(config.reasoningEffort === 'off' ? { reasoningEffort: 'off' } : {}),
+        ...(config.reasoningEffort === 'off' ? { reasoningEffort: ReasoningEffortId('off') } : {}),
       },
       signal,
       setup: (agentCtx) => {
         agentCtx.tools.presentAs('native')
         agentCtx.tools.restrict({ allow: [] })
         agentCtx.systemPrompt.section({
-          name: PERSONA_SECTION,
+          name: SUGGESTED_REPLIES_SECTION,
           order: 0,
           text: request.system,
           complete: true,

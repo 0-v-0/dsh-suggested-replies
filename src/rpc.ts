@@ -1,8 +1,7 @@
 /** Settings and sidecar-state RPC for the suggested-replies Web surface. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
-import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { MAX_SUGGESTION_COUNT, type SuggestedRepliesSettings } from './types.ts'
 import type {
@@ -138,11 +137,11 @@ export function isConfigSetPayload(value: unknown): value is ConfigSetPayload {
   return true
 }
 
-function ok<T>(value: T): RpcResult<T> {
+function ok<T>(value: T): ConnectionRpcResult<T> {
   return { ok: true, value }
 }
 
-function fail<T>(message: string): RpcResult<T> {
+function fail<T>(message: string): ConnectionRpcResult<T> {
   return { ok: false, error: { code: 'internal', message, details: {} } }
 }
 
@@ -158,8 +157,12 @@ export function registerSuggestedRepliesRpc(
   setCollapsedFn: (sessionId: string, collapsed: boolean) => void,
   getDraftFn: (sessionId: string) => string | null,
 ): void {
-  const connection = ctx.connection as HostConnectionHandle
-  connection.rpc.handle(CHANNEL, async (endpoint, payload, signal) => {
+  // `ctx.connection.rpc.handle` never mounts for a plugin: it registers the
+  // route via `owner.webServer` where `owner` resolves from the Connection
+  // plugin's own fiber, which injects only `credentials` — so it throws
+  // `cannot get property "webServer" without inject` whatever the caller
+  // injects. Mount the same envelope protocol on `webServer` directly.
+  const handleEndpoint = async (endpoint: string, payload: unknown, signal: AbortSignal): Promise<unknown> => {
     switch (endpoint) {
       case 'dock.setCollapsed': {
         if (!isDockSetCollapsedPayload(payload)) return fail<GenerateResult>('payload must be { sessionId: string, collapsed: boolean }')
@@ -238,7 +241,83 @@ export function registerSuggestedRepliesRpc(
       default:
         return fail(`unknown endpoint: ${endpoint}`)
     }
-  }, { authority: 'trusted-host' })
+  }
+  ctx.inject(['webServer'], (child: any) => {
+    child.effect(() => child.webServer.register({
+      kind: 'prefix',
+      path: CHANNEL,
+      handler: async (req: any, res: any) => {
+        const send = (status: number, body: unknown) => {
+          res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+          res.end(JSON.stringify(body))
+        }
+        const endpoint = endpointFromPath(req.url)
+        if (req.method !== 'POST' || !endpoint) { send(404, { error: 'not found' }); return }
+        const contentType = req.headers?.['content-type']?.split(';', 1)[0]?.trim().toLowerCase()
+        if (contentType !== 'application/json') { send(415, { error: 'content type must be application/json' }); return }
+        let envelope: { type?: unknown; rpcId?: unknown; method?: unknown; payload?: unknown } | null = null
+        try {
+          const body = await readBody(req)
+          if (body !== null && typeof body === 'object' && !Array.isArray(body)) {
+            envelope = body as { type?: unknown; rpcId?: unknown; method?: unknown; payload?: unknown }
+          }
+        } catch {
+          send(400, { error: 'body is not JSON' })
+          return
+        }
+        if (!envelope || envelope.type !== 'client-request' || typeof envelope.rpcId !== 'string' || typeof envelope.method !== 'string') {
+          send(400, { error: 'invalid client-request message' })
+          return
+        }
+        if (envelope.method !== endpoint) {
+          send(400, { error: `method ${JSON.stringify(envelope.method)} does not match endpoint ${JSON.stringify(endpoint)}` })
+          return
+        }
+        const ac = new AbortController()
+        if (typeof res.on === 'function') res.on('close', () => ac.abort())
+        let result: unknown
+        try {
+          result = await handleEndpoint(endpoint, envelope.payload, ac.signal)
+        } catch (error) {
+          send(500, { error: `handler failure: ${String(error)}` })
+          return
+        }
+        send(200, { type: 'server-response', rpcId: envelope.rpcId, result })
+      },
+    }))
+  })
+}
+
+function endpointFromPath(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  const pathname = new URL(url, 'http://dsh.local').pathname
+  if (!pathname.startsWith(`${CHANNEL}/`)) return undefined
+  const endpoint = pathname.slice(CHANNEL.length + 1)
+  if (!endpoint || endpoint.split('/').some((segment) => !/^[A-Za-z0-9_$.-]+$/.test(segment))) return undefined
+  return endpoint
+}
+
+/** Read a JSON request body (small); empty body → {} . */
+function readBody(req: any): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let data = ''
+    req.on('data', (chunk: Buffer | string) => {
+      data += chunk
+      if (data.length > 1e6) {
+        req.destroy()
+        reject(new Error('body too large'))
+      }
+    })
+    req.on('end', () => {
+      if (!data.trim()) return resolve({})
+      try {
+        resolve(JSON.parse(data))
+      } catch {
+        reject(new Error('invalid JSON body'))
+      }
+    })
+    req.on('error', reject)
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -80,7 +80,6 @@ describe('registerSuggestedRepliesRpc', () => {
     expect((ctx.connection.rpc.handle as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
       CHANNEL,
       expect.any(Function),
-      { authority: 'trusted-host' },
     )
   })
 

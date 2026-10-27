@@ -40,7 +40,7 @@ function parentAgent(options: {
       },
       requestHeader: () => options.logged === undefined ? undefined : { config: options.logged },
       deriveMessages: () => options.messages ?? [],
-      events: (options.messages ?? []).flatMap((candidate, index) => candidate.role === 'assistant'
+      snapshotEvents: () => (options.messages ?? []).flatMap((candidate, index) => candidate.role === 'assistant'
         ? [{
             type: 'assistant/message',
             seq: index,
@@ -108,7 +108,7 @@ function generationHarness(output: string, options: { flush?: boolean; archiveFa
       id: 'session-internal',
       header: { version: 0, id: 'session-internal', createdAt: 2, cwd: '/work' },
       get seq() { return events.length },
-      events,
+      snapshotEvents: () => events,
     },
     whenIdle: vi.fn(async () => undefined),
     followup,
@@ -250,7 +250,7 @@ describe('generateSuggestedReplies', () => {
     expect(composition?.presentAs).toHaveBeenCalledWith('native')
     expect(composition?.restrict).toHaveBeenCalledWith({ allow: [] })
     expect(composition?.section).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'deployment:persona',
+      name: 'suggested-replies:persona',
       order: 0,
       complete: true,
     }))

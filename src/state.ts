@@ -196,8 +196,17 @@ export class SuggestedRepliesStateStore {
     const fakeTable: KvTable<SessionId, SuggestedRepliesRow> = {
       get: (id: SessionId) => rows.get(id),
       put: async (id: SessionId, row: SuggestedRepliesRow) => { rows.set(id, row) },
-      delete: async (id: SessionId) => { rows.delete(id) },
+      delete: async (id: SessionId) => { rows.delete(id); return true },
       entries: () => rows.entries(),
+      keys: () => rows.keys(),
+      get size() { return rows.size },
+      update: async (id: SessionId, fn: (current: SuggestedRepliesRow) => SuggestedRepliesRow) => {
+        const current = rows.get(id)
+        if (current === undefined) throw new Error('dsh-suggested-replies: missing key in in-memory table')
+        const next = fn(current)
+        rows.set(id, next)
+        return next
+      },
     }
     return new SuggestedRepliesStateStore(ctx, fakeTable, fakeDomain)
   }
@@ -384,7 +393,11 @@ export class SuggestedRepliesStateStore {
   private async inspectHeader(sessionId: SessionId, signal?: AbortSignal): Promise<SessionHeader> {
     const live = this.ctx.sessions.get(sessionId)
     if (live !== undefined) return live.header
-    return (await this.ctx.sessionPersistence.inspect(sessionId, signal)).meta
+    const stat = await this.ctx.sessionPersistence.stat(sessionId, signal === undefined ? {} : { signal })
+    if (stat === undefined) {
+      throw new Error(`dsh-suggested-replies: session ${sessionId} not found`)
+    }
+    return stat.header
   }
 
   private async ensureSessionDurable(session: Session): Promise<void> {

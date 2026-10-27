@@ -11,12 +11,15 @@
  * @module @anionex/dsh-suggested-replies/client
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { SuggestedRepliesSection, type SuggestedRepliesSectionInjected } from './SuggestedRepliesSection.tsx'
 import { SuggestionBubbles, type SuggestionBubblesInjected } from './SuggestionBubbles.tsx'
 import { SuggestionActions, type SuggestionActionsInjected } from './SuggestionActions.tsx'
@@ -36,7 +39,7 @@ export const inject = ['slots', 'locale', 'connection']
  * Register the hidden dock, assistant-actions bubbles, and settings section.
  * @param ctx - browser client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-suggested-replies: dictionaries')
   const connection = ctx.connection as unknown as ConnectionHandle
   const rpc = connection.rpc

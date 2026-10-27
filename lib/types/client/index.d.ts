@@ -10,7 +10,7 @@
  *
  * @module @anionex/dsh-suggested-replies/client
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type { Context } from '@deepseek-ai/cordis';
 import { type SuggestedRepliesKey } from './locales.ts';
 declare module '@deepseek-ai/dsh-client-ui-slots' {
     interface LocaleNamespaceMap {
@@ -24,4 +24,4 @@ export declare const inject: string[];
  * Register the hidden dock, assistant-actions bubbles, and settings section.
  * @param ctx - browser client root context.
  */
-export declare function apply(ctx: ClientContext): void;
+export declare function apply(ctx: Context): void;

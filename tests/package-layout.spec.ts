@@ -36,7 +36,7 @@ describe('package layout', () => {
     expect(manifest.devDependencies?.zod).toBeUndefined()
     for (const [name, spec] of Object.entries(manifest.peerDependencies ?? {}) as Array<[string, string]>) {
       if (!name.startsWith('@deepseek-ai/dsh-')) continue
-      expect(spec, name).toBe('^0.1.0-rc.6')
+      expect(spec, name).toBe('^0.2.0-rc.2')
     }
   })
 
