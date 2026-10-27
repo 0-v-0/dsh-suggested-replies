@@ -1,10 +1,19 @@
 /** Logged auxiliary Agent run that predicts concise next user messages. */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
-import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
+import type { Session, SessionEvent, SessionId, SessionSeq } from '@deepseek-ai/dsh-session';
 import type { ReasoningEffort, SuggestedRepliesRoute, SuggestedReply } from './types.ts';
 import { type SuggestionOutputLimits } from './suggestion-prompt.ts';
 import { type GeneratePipelineConfig } from './generate.ts';
+declare module '@deepseek-ai/dsh-llm' {
+    interface MessageSourceMap {
+        /** This plugin's internal auxiliary Agent input; consumers fall through unknown kinds. */
+        plugin: {
+            kind: 'plugin';
+            plugin: string;
+        };
+    }
+}
 /**
  * Resolved runtime choices for one suggested-replies model request.
  *
@@ -35,7 +44,7 @@ export interface PreparedSuggestionRequest {
     readonly maxTokens: number;
 }
 /** Select the trailing model-visible conversation messages from a Session. */
-export declare function deriveRecentMessages(agent: Agent, contextMessageCount: number): any;
+export declare function deriveRecentMessages(agent: Agent, contextMessageCount: number): import("@deepseek-ai/dsh-llm").Message[];
 /** Resolve the latest logged route, falling back to the Agent creation route. */
 export declare function resolveSuggestionRoute(agent: Agent): SuggestedRepliesRoute | null;
 /** Validate and normalize an optional explicit auxiliary route. */
@@ -46,7 +55,7 @@ export declare function getSessionEvents(session: Session): readonly SessionEven
 /** Derive the messageId of the last assistant message in a completed turn. */
 export declare function lastAssistantMessageIdForTurn(agent: Agent, turn: number): string | null;
 /** Find the event seq of the assistant message with the given messageId. */
-export declare function seqForMessageId(agent: Agent, messageId: string): number | null;
+export declare function seqForMessageId(agent: Agent, messageId: string): SessionSeq | null;
 /** Extract the last non-empty assistant text produced inside one owned run interval. */
 export declare function extractSuggestionText(events: readonly SessionEvent[], firstSeq: number): string | null;
 /**

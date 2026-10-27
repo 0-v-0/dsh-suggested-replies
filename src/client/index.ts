@@ -15,11 +15,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
-import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { SuggestedRepliesSection, type SuggestedRepliesSectionInjected } from './SuggestedRepliesSection.tsx'
 import { SuggestionBubbles, type SuggestionBubblesInjected } from './SuggestionBubbles.tsx'
 import { SuggestionActions, type SuggestionActionsInjected } from './SuggestionActions.tsx'
@@ -30,10 +25,45 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Copy used by the suggested replies actions and settings section. */
     'suggested-replies': SuggestedRepliesKey
   }
+  interface SessionStandardProps {
+    /** Current Session identity. */
+    sessionId: import('@deepseek-ai/dsh-session/types').SessionId
+  }
+  interface SlotMap {
+    /** Full-width entries above the composer card (input zone currency). */
+    'conversation.input.dock': {
+      kind: 'list'
+      scope: 'session'
+      owner: {
+        readonly session: unknown
+        readonly input: unknown
+      }
+    }
+    /** Ordered actions for one finalized assistant message. */
+    'conversation.chat.assistant-actions': {
+      kind: 'list'
+      scope: 'session'
+      owner: {
+        readonly messageId: import('@deepseek-ai/dsh-llm/brand').MessageId
+      }
+    }
+    /** One page inside the Plugins settings section. */
+    'settings.section': {
+      kind: 'list'
+      scope: 'root'
+    }
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Slot registry installed by the ui-renderer client feature. */
+    slots: import('@deepseek-ai/dsh-client-ui-renderer/client').SlotRegistry
+  }
 }
 
 /** Required client services: slots, locale registration, and settings RPC transport. */
-export const inject = ['slots', 'locale', 'connection']
+export const inject = ['slots', 'locale', 'connection', 'sessions', 'conversation']
 
 /**
  * Register the hidden dock, assistant-actions bubbles, and settings section.
@@ -50,7 +80,29 @@ export function apply(ctx: Context): void {
     id: 'suggested-replies',
     order: 15,
     locale: NS,
-    inject: (): SuggestionBubblesInjected => ({ rpc }),
+    inject: (sessionId: import('@deepseek-ai/dsh-session/types').SessionId): SuggestionBubblesInjected => {
+      // Resolve the per-session input facade so a bubble click can write the
+      // draft without ever submitting. `sessions`/`conversation` are injected
+      // services (ui-session / ui-conversation).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sessions = (ctx as any).sessions
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const conversation = (ctx as any).conversation
+      let setDraft: ((text: string) => void) | undefined
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const actx = (sessions as any)?.scope(sessionId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const service = actx === undefined ? undefined : (conversation as any) ?? (actx as any).get?.('conversation')
+        if (service !== undefined) {
+          const sessionInput = service.input.for(actx)
+          if (sessionInput !== undefined) setDraft = (text: string): void => sessionInput.setDraft(text)
+        }
+      } catch {
+        setDraft = undefined
+      }
+      return { rpc, setDraft }
+    },
   }, SuggestionBubbles))
   // Assistant-actions: renders suggestion bubbles below the latest AI message
   const actionsInjected = (): SuggestionActionsInjected => ({ rpc })

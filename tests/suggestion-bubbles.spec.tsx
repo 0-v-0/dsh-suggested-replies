@@ -106,8 +106,7 @@ describe('SuggestionActions', () => {
     render(<SuggestionBubbles {...{
       rpc: {} as never,
       sessionId: 'session-a',
-      useInput: (s: (state: { phase: string }) => unknown) => s({ phase: 'plain' }),
-      inputActions: { setDraft, submit, addImages: () => true, removeImage: () => undefined, pruneImages: () => undefined },
+      setDraft,
       t: () => '',
     } as never} />)
 

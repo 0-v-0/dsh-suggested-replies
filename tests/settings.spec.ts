@@ -5,8 +5,9 @@
  * module under test is loaded. The real package resolves to the same value
  * for plain session ids, so the stub does not change any assertion below.
  */
+import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import {
   CHANNEL,
   isConfigSetPayload,
@@ -17,19 +18,49 @@ import {
 
 vi.mock('@deepseek-ai/dsh-session', () => ({ SessionId: (value: string) => value }))
 
-type RpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<RpcResult<unknown>>
+/** HTTP route handler registered on the trusted channel. */
+type RpcHttpHandler = (req: unknown, res: unknown) => Promise<void>
 
-/** Capture one registered RPC handler without constructing a Cordis host. */
-function makeCtxStub(): { ctx: object; handler: () => RpcHandler } {
-  let captured: RpcHandler | undefined
+/** Capture one registered route handler without constructing a Cordis host. */
+function makeCtxStub(): { ctx: object; handler: () => RpcHttpHandler } {
+  let captured: RpcHttpHandler | undefined
   const ctx = {
-    connection: { rpc: { handle: vi.fn((_channel: string, handler: RpcHandler) => {
-      captured = handler
-      return async () => undefined
-    }) } },
-    inject: (_deps: readonly string[], callback: (ctx: typeof ctx) => void) => callback(ctx),
+    inject: (_deps: readonly string[], callback: (child: {
+      effect: (fn: () => unknown) => unknown
+      webServer: { register: (route: { kind: string; path: string; handler: RpcHttpHandler }) => () => undefined }
+    }) => void) => {
+      callback({
+        effect: (fn: () => unknown) => fn(),
+        webServer: {
+          register: vi.fn((route: { kind: string; path: string; handler: RpcHttpHandler }) => {
+            captured = route.handler
+            return () => undefined
+          }),
+        },
+      })
+    },
   }
-  return { ctx, handler: () => captured as RpcHandler }
+  return { ctx, handler: () => captured as RpcHttpHandler }
+}
+
+/** Drive one client-request envelope through the route handler and unwrap the result. */
+async function invoke(handler: RpcHttpHandler, endpoint: string, payload: unknown): Promise<ConnectionRpcResult<unknown>> {
+  let status = 0
+  let body: unknown
+  const res = {
+    writeHead: (code: number) => { status = code },
+    end: (raw: unknown) => { body = typeof raw === 'string' ? JSON.parse(raw) : raw },
+    on: vi.fn(() => undefined),
+  }
+  const req = Readable.from([JSON.stringify({ type: 'client-request', rpcId: 'rpc-1', method: endpoint, payload })]) as unknown as {
+    url: string; method: string; headers: Record<string, string>
+  }
+  req.url = `${CHANNEL}/${endpoint}`
+  req.method = 'POST'
+  req.headers = { 'content-type': 'application/json' }
+  await handler(req as never, res as never)
+  if (status !== 200) throw new Error(`HTTP ${status}: ${JSON.stringify(body)}`)
+  return (body as { type: string; rpcId: string; result: ConnectionRpcResult<unknown> }).result
 }
 
 const signal = new AbortController().signal
@@ -75,18 +106,15 @@ const noopFork = vi.fn(async () => 'child-session')
 const noopGetDraft = vi.fn(() => null)
 describe('registerSuggestedRepliesRpc', () => {
   it('registers the dedicated trusted channel', () => {
-    const { ctx } = makeCtxStub()
+    const { ctx, handler } = makeCtxStub()
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    expect((ctx.connection.rpc.handle as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
-      CHANNEL,
-      expect.any(Function),
-    )
+    expect(handler()).toEqual(expect.any(Function))
   })
 
   it('gets config via config.get', async () => {
     const { ctx, handler } = makeCtxStub()
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    expect(await handler()('config.get', {}, signal)).toEqual({ ok: true, value: defaultConfig })
+    expect(await invoke(handler(), 'config.get', {})).toEqual({ ok: true, value: defaultConfig })
   })
 
   it('sets config via config.set', async () => {
@@ -98,7 +126,7 @@ describe('registerSuggestedRepliesRpc', () => {
       return current
     }
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, getConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    const result = await handler()('config.set', { suggestionCount: 5 }, signal)
+    const result = await invoke(handler(), 'config.set', { suggestionCount: 5 })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value.suggestionCount).toBe(5)
   })
@@ -107,7 +135,7 @@ describe('registerSuggestedRepliesRpc', () => {
     const { ctx, handler } = makeCtxStub()
     const setCollapsedFn = vi.fn()
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, setCollapsedFn, noopGetDraft)
-    const result = await handler()('dock.setCollapsed', { sessionId: 'session-a', collapsed: true }, signal)
+    const result = await invoke(handler(), 'dock.setCollapsed', { sessionId: 'session-a', collapsed: true })
     expect(result).toMatchObject({ ok: true, value: { ok: true } })
     expect(setCollapsedFn).toHaveBeenCalledWith('session-a', true)
   })
@@ -116,8 +144,8 @@ describe('registerSuggestedRepliesRpc', () => {
     const { ctx, handler } = makeCtxStub()
     const setConfig = async (): Promise<ConfigResponse> => { throw new Error('write failed') }
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    expect(await handler()('config.set', { suggestionCount: 0 }, signal)).toMatchObject({ ok: false, error: { message: 'write failed' } })
-    expect(await handler()('other', {}, signal)).toMatchObject({ ok: false, error: { message: 'unknown endpoint: other' } })
+    expect(await invoke(handler(), 'config.set', { suggestionCount: 0 })).toMatchObject({ ok: false, error: { message: 'write failed' } })
+    expect(await invoke(handler(), 'other', {})).toMatchObject({ ok: false, error: { message: 'unknown endpoint: other' } })
   })
 
   it('gets and watches sidecar state with the request signal', async () => {
@@ -125,15 +153,15 @@ describe('registerSuggestedRepliesRpc', () => {
     const store = storeStub()
     registerSuggestedRepliesRpc(ctx as never, store as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
 
-    expect(await handler()('state.get', { sessionId: 'session-a' }, signal))
+    expect(await invoke(handler(), 'state.get', { sessionId: 'session-a' }))
       .toEqual({ ok: true, value: state() })
-    expect(store.get).toHaveBeenCalledWith('session-a', signal)
+    expect(store.get).toHaveBeenCalledWith('session-a', expect.any(AbortSignal))
 
-    expect(await handler()('state.watch', {
+    expect(await invoke(handler(), 'state.watch', {
       sessionId: 'session-a', lifecycle: { createdAt: 1, cwd: '/work' }, revision: 1,
-    }, signal))
+    }))
       .toEqual({ ok: true, value: state(2) })
-    expect(store.watch).toHaveBeenCalledWith('session-a', { createdAt: 1, cwd: '/work' }, 1, signal)
+    expect(store.watch).toHaveBeenCalledWith('session-a', { createdAt: 1, cwd: '/work' }, 1, expect.any(AbortSignal))
   })
 
   it.each([
@@ -145,14 +173,14 @@ describe('registerSuggestedRepliesRpc', () => {
   ])('rejects malformed %s payload %#', async (endpoint, payload) => {
     const { ctx, handler } = makeCtxStub()
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    expect(await handler()(endpoint, payload, signal)).toMatchObject({ ok: false, error: { code: 'internal' } })
+    expect(await invoke(handler(), endpoint, payload)).toMatchObject({ ok: false, error: { code: 'internal' } })
   })
 
   it('surfaces a config.get failure as an error result', async () => {
     const { ctx, handler } = makeCtxStub()
     const failingGetConfig = (): ConfigResponse => { throw new Error('settings unavailable') }
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, failingGetConfig, noopSetConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
-    expect(await handler()('config.get', {}, signal)).toMatchObject({ ok: false, error: { message: 'settings unavailable' } })
+    expect(await invoke(handler(), 'config.get', {})).toMatchObject({ ok: false, error: { message: 'settings unavailable' } })
   })
 
   it.each([
@@ -171,7 +199,7 @@ describe('registerSuggestedRepliesRpc', () => {
     const setConfig = vi.fn(async (): Promise<ConfigResponse> => defaultConfig)
     registerSuggestedRepliesRpc(ctx as never, storeStub() as never, noopGetConfig, setConfig, noopGenerate, noopDismiss, noopFork, noopSetCollapsed, noopGetDraft)
 
-    expect(await handler()('config.set', payload, signal)).toMatchObject({ ok: false, error: { code: 'internal' } })
+    expect(await invoke(handler(), 'config.set', payload)).toMatchObject({ ok: false, error: { code: 'internal' } })
     expect(setConfig).not.toHaveBeenCalled()
   })
 

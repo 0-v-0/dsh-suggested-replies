@@ -7,7 +7,7 @@ import { SuggestionActions } from '../src/client/SuggestionActions.tsx'
 
 describe('client registration', () => {
   it('declares the runtime services needed by both Web surfaces', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'sessions', 'conversation'])
   })
 
   it('registers hidden dock, assistant-actions bubbles, and settings section', () => {
@@ -35,7 +35,8 @@ describe('client registration', () => {
     })
     const dock = registrations.find(entry => entry.component === SuggestionBubbles)
     expect(dock?.definition.inject).toBeTypeOf('function')
-    expect((dock!.definition.inject as () => unknown)()).toEqual({ rpc })
+    // No sessions/conversation services in this stub: the setDraft writer stays undefined.
+    expect((dock!.definition.inject as (sessionId: string) => unknown)('session-a')).toEqual({ rpc, setDraft: undefined })
 
     // Assistant-actions at conversation.chat.assistant-actions order 20
     expect(injectSlot).toHaveBeenCalledWith('conversation.chat.assistant-actions', expect.any(Function))

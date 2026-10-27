@@ -14,9 +14,7 @@ const HOST_EXTERNALS = [
   '@deepseek-ai/schemastery',
   '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-client-connection',
-  '@deepseek-ai/dsh-host-apiproxy',
-  '@deepseek-ai/dsh-host-apiproxy/api',
-  '@deepseek-ai/dsh-invariants',
+  '@deepseek-ai/dsh-host-webserver',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-session-persistence',
@@ -50,7 +48,7 @@ const CLIENT_EXTERNALS = [
 
 const hostConfig: UserConfig = {
   name: ID,
-  entry: { index: 'src/index.ts', invariant: 'src/invariant.ts' },
+  entry: { index: 'src/index.ts' },
   outDir: 'lib',
   format: ['esm'],
   fixedExtension: false,

@@ -27,7 +27,24 @@ export declare const suggestedRepliesRowSchema: z.ZodObject<{
 /** One persisted state row owned by this plugin. */
 export type SuggestedRepliesRow = z.infer<typeof suggestedRepliesRowSchema>;
 /** Plugin-owned state domain; parent Session logs contain no plugin event types. */
-export declare const suggestedRepliesStateDomainSpec: any;
+export declare const suggestedRepliesStateDomainSpec: {
+    name: string;
+    version: number;
+    tables: {
+        sessions: import("@deepseek-ai/dsh-storage-domain").DomainTableSpec<SessionId, {
+            session: {
+                createdAt: number;
+                cwd?: string | undefined;
+            };
+            revision: number;
+            turn: number;
+            messageId: string | null;
+            phase: "generating" | "ready" | "cleared";
+            suggestions: string[];
+            generationSessionId?: string | undefined;
+        }>;
+    };
+};
 /** Client-facing state snapshot. */
 export interface SuggestedRepliesStateSnapshot {
     /** Header identity of the Session lifecycle represented by this snapshot. */
