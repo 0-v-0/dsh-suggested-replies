@@ -120,8 +120,17 @@ describe('redactSecrets', () => {
   })
 
   it('masks Stripe live and test keys', () => {
-    // Stripe key fixtures are generated at runtime; committed literals trip GitHub push protection.
-    // Stripe key fixtures are generated at runtime; committed literals trip GitHub push protection.
+    // Fixtures are generated at runtime: committing literal key-shaped strings
+    // trips GitHub push protection even for Stripe's documentation examples.
+    // Real keys are `sk_<env>_` followed by 24 alphanumeric characters.
+    const stripeKey = (env: 'live' | 'test'): string => {
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+      let body = ''
+      for (let i = 0; i < 24; i += 1) body += alphabet[Math.floor(Math.random() * alphabet.length)]
+      return `sk_${env}_${body}`
+    }
+    expect(redactSecrets(stripeKey('live'))).toBe('<stripe_key>')
+    expect(redactSecrets(stripeKey('test'))).toBe('<stripe_key>')
   })
 
   it('masks Google API keys at the real 39-character length', () => {
